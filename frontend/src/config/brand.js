@@ -3,7 +3,7 @@
 
 export const BRAND = {
   name: "UTSAV",
-  tagline: "India's Curated Event Discovery & Ticketing Platform",
+  tagline: "Celebrate Every Experience",
   supportEmail: "support@utsav-events.in",
   locations: ["Bengaluru", "Mumbai", "Delhi-NCR", "Hyderabad", "Pune", "Chennai", "Jaipur", "Goa"],
 };

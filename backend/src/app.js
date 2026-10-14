@@ -7,6 +7,11 @@ import healthRouter from './routes/health.js';
 import authRouter from './routes/authRoutes.js';
 import eventRouter from './routes/eventRoutes.js';
 import adminRouter from './routes/adminRoutes.js';
+import bookingRouter from './routes/bookingRoutes.js';
+import ticketRouter from './routes/ticketRoutes.js';
+import notificationRouter from './routes/notificationRoutes.js';
+import reviewRouter from './routes/reviewRoutes.js';
+import userRouter from './routes/userRoutes.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 dotenv.config();
@@ -35,6 +40,11 @@ app.use('/api', healthRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/events', eventRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/bookings', bookingRouter);
+app.use('/api/tickets', ticketRouter);
+app.use('/api/notifications', notificationRouter);
+app.use('/api/reviews', reviewRouter);
+app.use('/api/users', userRouter);
 
 // Centralized Error Handling
 app.use(notFoundHandler);

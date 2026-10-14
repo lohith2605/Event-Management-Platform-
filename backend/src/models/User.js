@@ -35,6 +35,26 @@ const UserSchema = new mongoose.Schema(
       },
       default: 'attendee',
     },
+    phone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: [300, 'Bio cannot exceed 300 characters'],
+      default: '',
+    },
+    city: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    avatar: {
+      type: String,
+      default: '',
+    },
     resetPasswordToken: {
       type: String,
       select: false,

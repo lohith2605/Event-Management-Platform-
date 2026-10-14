@@ -104,13 +104,39 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-[var(--color-borders)]">
           {/* Brand Info */}
           <div className="lg:col-span-2 space-y-4">
-            <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-9 h-9 rounded-xl bg-[var(--color-primary-action)] text-[var(--color-primary-text)] flex items-center justify-center font-bold text-lg shadow-xs">
-                {BRAND.name.charAt(0)}
+            <Link to="/" className="flex items-center gap-3 group">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-primary-action)] via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 transition-all">
+                <svg
+                  className="w-5 h-5 text-white drop-shadow-xs"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M4 3h16a1 1 0 0 1 1 1v16l-5-2.8L12 19l-4-1.8L4 20V4a1 1 0 0 1 1-1z"
+                    fill="currentColor"
+                    fillOpacity="0.22"
+                  />
+                  <path
+                    d="M12 6.5l1.1 2.3 2.5.4-1.8 1.8.4 2.5L12 12.3l-2.2 1.2.4-2.5-1.8-1.8 2.5-.4L12 6.5z"
+                    fill="#fbbf24"
+                    stroke="#fbbf24"
+                    strokeWidth="0.8"
+                  />
+                </svg>
               </div>
-              <span className="font-extrabold text-2xl font-serif text-[var(--color-main-text)]">
-                {BRAND.name}
-              </span>
+              <div className="flex flex-col justify-center">
+                <span className="font-extrabold text-2xl font-serif text-[var(--color-main-text)] leading-tight">
+                  {BRAND.name}
+                </span>
+                <span className="text-[10px] tracking-wide text-[var(--color-secondary-text)] font-medium leading-tight">
+                  {BRAND.tagline}
+                </span>
+              </div>
             </Link>
             <p className="text-[var(--color-secondary-text)] text-xs sm:text-sm leading-relaxed max-w-sm">
               Discover and book authentic events across India—from college cultural fests and hackathons to music concerts, tech conferences, and artisan exhibitions.

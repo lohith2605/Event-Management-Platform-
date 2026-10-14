@@ -14,12 +14,23 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 
-function AppLayout({ children }) {
+// Public Layout includes the full marketing and discovery footer
+function PublicLayout({ children }) {
   return (
     <div className="flex flex-col min-h-screen bg-[var(--color-primary-bg)] text-[var(--color-main-text)] transition-colors">
       <Navbar />
       <main className="flex-1">{children}</main>
       <Footer />
+    </div>
+  );
+}
+
+// Dashboard Layout provides a clean, distraction-free app experience without the marketing footer
+function DashboardLayout({ children }) {
+  return (
+    <div className="flex flex-col min-h-screen bg-[var(--color-primary-bg)] text-[var(--color-main-text)] transition-colors">
+      <Navbar />
+      <main className="flex-1">{children}</main>
     </div>
   );
 }
@@ -30,29 +41,29 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            {/* Public Discovery Routes */}
+            {/* Public Discovery Routes (with PublicLayout and marketing Footer) */}
             <Route
               path="/"
               element={
-                <AppLayout>
+                <PublicLayout>
                   <HomePage />
-                </AppLayout>
+                </PublicLayout>
               }
             />
             <Route
               path="/events"
               element={
-                <AppLayout>
+                <PublicLayout>
                   <EventsPage />
-                </AppLayout>
+                </PublicLayout>
               }
             />
             <Route
               path="/organizers"
               element={
-                <AppLayout>
+                <PublicLayout>
                   <OrganizerPage />
-                </AppLayout>
+                </PublicLayout>
               }
             />
             <Route path="/organizer" element={<Navigate to="/organizers" replace />} />
@@ -64,26 +75,96 @@ export default function App() {
             <Route path="/admin/login" element={<AdminLoginPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
-            {/* Protected Attendee Route */}
+            {/* Protected Attendee Routes (Clean DashboardLayout without Footer) */}
             <Route
-              path="/dashboard"
+              path="/attendee"
               element={
                 <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <AppLayout>
+                  <DashboardLayout>
                     <AttendeeDashboard />
-                  </AppLayout>
+                  </DashboardLayout>
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/attendee/events"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendee/bookings"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendee/tickets"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendee/notifications"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendee/reviews"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/attendee/profile"
+              element={
+                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                  <DashboardLayout>
+                    <AttendeeDashboard />
+                  </DashboardLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route path="/attendee/*" element={<Navigate to="/attendee" replace />} />
 
-            {/* Protected Organizer Route */}
+            {/* Backward Compatibility & Legacy Dashboard Deep-Link Redirects */}
+            <Route path="/dashboard" element={<Navigate to="/attendee" replace />} />
+            <Route path="/dashboard/events" element={<Navigate to="/attendee/events" replace />} />
+            <Route path="/dashboard/bookings" element={<Navigate to="/attendee/bookings" replace />} />
+            <Route path="/dashboard/tickets" element={<Navigate to="/attendee/tickets" replace />} />
+            <Route path="/dashboard/notifications" element={<Navigate to="/attendee/notifications" replace />} />
+            <Route path="/dashboard/reviews" element={<Navigate to="/attendee/reviews" replace />} />
+            <Route path="/dashboard/profile" element={<Navigate to="/attendee/profile" replace />} />
+
+            {/* Protected Organizer Route (Clean DashboardLayout without Footer) */}
             <Route
               path="/organizer/dashboard"
               element={
                 <ProtectedRoute allowedRoles={['organizer', 'admin']}>
-                  <AppLayout>
+                  <DashboardLayout>
                     <OrganizerDashboard />
-                  </AppLayout>
+                  </DashboardLayout>
                 </ProtectedRoute>
               }
             />

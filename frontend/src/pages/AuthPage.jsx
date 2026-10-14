@@ -160,13 +160,13 @@ export default function AuthPage({ initialMode = 'login' }) {
         // Direct to authorized destination
         const from = location.state?.from?.pathname;
         if (from && !from.startsWith('/login') && !from.startsWith('/signup')) {
-          navigate(from, { replace: true });
+          navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
         } else if (user.role === 'admin') {
           navigate('/admin', { replace: true });
         } else if (user.role === 'organizer') {
           navigate('/organizer/dashboard', { replace: true });
         } else {
-          navigate('/dashboard', { replace: true });
+          navigate('/attendee', { replace: true });
         }
       } else {
         const user = await register({
@@ -181,7 +181,7 @@ export default function AuthPage({ initialMode = 'login' }) {
         if (user.role === 'organizer') {
           navigate('/organizer/dashboard', { replace: true });
         } else {
-          navigate('/dashboard', { replace: true });
+          navigate('/attendee', { replace: true });
         }
       }
     } catch (err) {
@@ -253,15 +253,35 @@ export default function AuthPage({ initialMode = 'login' }) {
             className="flex items-center gap-2 group text-inherit focus-visible:outline-none"
             aria-label={`${BRAND.name} Homepage`}
           >
-            <div className="w-8 h-8 xl:w-9 xl:h-9 rounded-xl bg-[var(--color-primary-action)] text-[var(--color-primary-text)] flex items-center justify-center font-bold font-serif text-lg shadow-xs group-hover:bg-[var(--color-primary-action-hover)] transition-colors">
-              {BRAND.name.charAt(0)}
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--color-primary-action)] via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 transition-all">
+              <svg
+                className="w-4.5 h-4.5 text-white"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path
+                  d="M4 3h16a1 1 0 0 1 1 1v16l-5-2.8L12 19l-4-1.8L4 20V4a1 1 0 0 1 1-1z"
+                  fill="currentColor"
+                  fillOpacity="0.22"
+                />
+                <path
+                  d="M12 6.5l1.1 2.3 2.5.4-1.8 1.8.4 2.5L12 12.3l-2.2 1.2.4-2.5-1.8-1.8 2.5-.4L12 6.5z"
+                  fill="#fbbf24"
+                  stroke="#fbbf24"
+                  strokeWidth="0.8"
+                />
+              </svg>
             </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold text-xl xl:text-2xl tracking-tight font-serif leading-none">
+            <div className="flex flex-col justify-center">
+              <span className="font-extrabold text-xl xl:text-2xl tracking-tight font-serif leading-tight">
                 {BRAND.name}
               </span>
-              <span className="text-[9px] uppercase tracking-widest text-[var(--color-golden-accent)] font-bold mt-0.5">
-                Events & Passes
+              <span className="text-[9px] tracking-wide text-white/75 font-medium leading-tight">
+                {BRAND.tagline}
               </span>
             </div>
           </Link>
