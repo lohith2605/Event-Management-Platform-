@@ -1,86 +1,172 @@
-# 🎪 Event Management Platform
+# Smart Event Management Platform
 
-A web-based platform designed to simplify event organization, ticket bookings, and attendee management.
-
----
-
-## 📌 About the Project
-
-Managing events—whether college fests, technical workshops, seminars, or concerts—can quickly become chaotic without the right tools. 
-
-The **Event Management Platform** is being developed to provide an all-in-one hub where:
-- **Organizers** can effortlessly create, publish, and track events.
-- **Attendees** can discover upcoming events, register, and receive tickets.
-- **Admins** can oversee activities, manage users, and ensure platform quality.
-
-This repository marks the initial phase of the project. As modules, APIs, and interfaces are developed, this document will be updated with technical details and setup guides.
+A full-stack web application foundation for a Smart Event Management Platform, built with JavaScript, React + Vite, Node.js, Express, and MongoDB with Mongoose.
 
 ---
 
-## 🎯 Target Goals & Core Features
+## 📁 Project Structure
 
-### 1. 🎟️ Event Discovery & Registration
-- Browse upcoming events with search and category filters.
-- View event details including date, time, venue, speaker profiles, and agenda.
-- Hassle-free registration and booking confirmation.
-
-### 2. 📝 Event Creation & Management
-- Easy-to-use form for organizers to create and update events.
-- Set event capacity, registration deadlines, and ticket types (Free / Paid).
-- Manage attendee lists and download registration data.
-
-### 3. 🎫 Digital Pass & Verification
-- Issue digital tickets with unique identification / QR codes for attendees.
-- Simple check-in mechanism for event day verification.
-
-### 4. 📊 Dashboard & Insights
-- Overview of total registrations, attendee engagement, and event performance.
-- Real-time updates on remaining spots.
+```text
+smart-event-platform/
+├── frontend/             # React + Vite application
+│   ├── src/
+│   │   ├── App.jsx       # Foundation verification UI
+│   │   ├── App.css       # Foundation styling
+│   │   ├── main.jsx      # React entry point
+│   │   └── ...
+│   ├── .env.example      # Frontend environment variable template
+│   ├── vite.config.js    # Vite configuration with /api proxy to backend
+│   └── package.json
+│
+├── backend/              # Node.js + Express API (ES modules)
+│   ├── src/
+│   │   ├── config/
+│   │   │   └── db.js     # MongoDB / Mongoose connection handler
+│   │   ├── middlewares/
+│   │   │   └── errorHandler.js # Centralized 404 & error handlers
+│   │   ├── routes/
+│   │   │   └── health.js # GET /api/health route
+│   │   ├── app.js        # Express app, CORS, JSON parsing, middleware
+│   │   └── server.js     # Server entry point & listener
+│   ├── .env.example      # Backend environment variable template
+│   └── package.json
+│
+├── .gitignore            # Git ignore rules for node_modules, build outputs, and env files
+├── package.json          # Root scripts to run and install packages
+└── README.md             # Project documentation & setup instructions
+```
 
 ---
 
-## 👥 User Roles
+## ⚙️ Prerequisites
 
-| Role | Responsibilities & Access |
+- **Node.js**: `v18+` (v20+ or v24+ recommended)
+- **npm**: `v9+`
+- **MongoDB**: Local MongoDB instance or MongoDB Atlas connection string (optional for health check)
+
+---
+
+## 🚀 Setup & Installation
+
+### 1. Clone & Enter the Repository
+```bash
+git clone https://github.com/lohith2605/Event-Management-Platform-.git
+cd Event-Management-Platform-
+```
+
+### 2. Install Dependencies
+
+You can install all dependencies from the root directory:
+```bash
+npm run install:all
+```
+
+Or install them individually:
+```bash
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+```
+
+---
+
+## 🔑 Environment Variables
+
+### Backend Configuration
+Copy the template file to `.env` in the `backend/` directory:
+```bash
+cp backend/.env.example backend/.env
+```
+
+Define the following environment variables in `backend/.env`:
+| Variable | Description | Default / Example |
+| :--- | :--- | :--- |
+| `PORT` | Port for the Express API server | `5000` |
+| `NODE_ENV` | Application environment mode | `development` |
+| `MONGODB_URI` | MongoDB connection string | `mongodb://localhost:27017/smart-event-platform` |
+| `CORS_ORIGIN` | Allowed origin for frontend requests | `http://localhost:5173` |
+
+### Frontend Configuration
+Copy the template file in `frontend/` (if customized):
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+| Variable | Description |
 | :--- | :--- |
-| **Attendee** | Browse events, register/book tickets, view booking history |
-| **Organizer** | Create and manage events, monitor registrations, check-in attendees |
-| **Administrator** | Manage user accounts, moderate event listings, oversee platform |
+| `VITE_API_BASE_URL` | Optional custom API base URL (Vite proxy handles `/api` by default) |
 
 ---
 
-## 🛠️ Planned Tech Stack
+## 💻 Running the Application
 
-The platform is designed to be modern, scalable, and responsive:
+### Option A: From the Root Directory
 
-- **Frontend:** Responsive Web Interface (HTML, CSS, JavaScript / Modern UI Framework)
-- **Backend:** REST API Services for business logic, auth, and database operations
-- **Database:** Relational or NoSQL database for users, events, and bookings
-- **Authentication:** Secure login and role-based access control
+- **Run backend in watch mode:**
+  ```bash
+  npm run dev:backend
+  ```
 
-*(Exact libraries and frameworks will be finalized as implementation begins.)*
+- **Run frontend development server:**
+  ```bash
+  npm run dev:frontend
+  ```
+
+### Option B: From Individual Directories
+
+- **Start Backend:**
+  ```bash
+  cd backend
+  npm run dev
+  ```
+  The API server runs at `http://localhost:5000`.
+
+- **Start Frontend (in a separate terminal):**
+  ```bash
+  cd frontend
+  npm run dev
+  ```
+  The Vite development server runs at `http://localhost:5173`.
 
 ---
 
-## 🚀 Project Roadmap
+## 🔍 How to Verify the Foundation
 
-- [x] Project ideation & repository initialization
-- [ ] Requirements definition & database schema design
-- [ ] User authentication & role management (Attendee, Organizer, Admin)
-- [ ] Core event creation & discovery module
-- [ ] Booking & ticket generation system
-- [ ] Organizer dashboard & attendee management
-- [ ] Testing, UI polish, and deployment
+1. **Verify Backend Health Endpoint:**
+   - Open a browser or run:
+     ```bash
+     curl http://localhost:5000/api/health
+     ```
+   - Expected JSON response:
+     ```json
+     {
+       "status": "ok",
+       "message": "Smart Event Management Platform API is running",
+       "timestamp": "...",
+       "environment": "development",
+       "database": "disconnected" // or "connected" if MongoDB is active
+     }
+     ```
+
+2. **Verify Frontend & Vite Proxy:**
+   - Navigate to `http://localhost:5173`.
+   - The confirmation dashboard will show:
+     - Frontend status: **Running**
+     - Backend API status: **Connected** (queried via `/api/health` proxy)
+     - Live response payload from the backend.
 
 ---
 
-## 📄 License
+## 🛡️ Implemented Foundation Features
 
-This project is licensed under the MIT License - feel free to use and modify it.
-
----
-
-## 👤 Author
-
-- **Lohith** - [@lohith2605](https://github.com/lohith2605)
-- Repository: [lohith2605/Event-Management-Platform-](https://github.com/lohith2605/Event-Management-Platform-.git)
+- **React + Vite**: Fast modern dev build with HMR and modular UI.
+- **Node.js + Express (ES Modules)**: Native `import/export` syntax.
+- **Vite Proxy**: Transparently proxies `/api/*` from `http://localhost:5173` to `http://localhost:5000`.
+- **JSON & Body Parsing**: Configured with `express.json()` and `express.urlencoded()`.
+- **Development CORS**: Preconfigured for `http://localhost:5173`.
+- **Centralized Error Handling**: Unified 404 handler and global error middleware.
+- **Mongoose Database Hook**: Modular MongoDB connection ready for upcoming schemas.

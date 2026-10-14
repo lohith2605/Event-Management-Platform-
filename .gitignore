@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.yarn/
+
+# Environment files (never commit real environment values)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Production build outputs
+dist/
+dist-ssr/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# Editor & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* 
+  CENTRALIZED THEME TOKENS
+  Default: Warm Terracotta
+  Alternative: Champagne Gold + Sand
+*/
+:root,
+[data-theme="terracotta"] {
+  --color-primary-bg: #FFFDF8;
+  --color-secondary-bg: #F6F0E6;
+  --color-card-bg: #FFFDF8;
+  --color-primary-action: #D96342;
+  --color-primary-action-hover: #BC4F32;
+  --color-primary-text: #FFFDF8;
+  --color-golden-accent: #E6AE49;
+  --color-main-text: #292722;
+  --color-secondary-text: #6D675F;
+  --color-borders: #E5D9C8;
+  --color-dark-panel: #292722;
+  --color-accent-soft: #FDF1ED;
+  --color-gold-soft: #FDF8EE;
+  --color-input-bg: #F6F0E6;
+  --color-badge-bg: #FFFDF8;
+  color-scheme: light;
+}
+
+[data-theme="champagne"] {
+  --color-primary-bg: #FFF9EE;
+  --color-secondary-bg: #E7D3AD;
+  --color-card-bg: #FFFFFF;
+  --color-primary-action: #C99A3D;
+  --color-primary-action-hover: #A97920;
+  --color-primary-text: #FFFFFF;
+  --color-golden-accent: #C99A3D;
+  --color-main-text: #33271B;
+  --color-secondary-text: #6B5D4A;
+  --color-borders: #DFCEB0;
+  --color-dark-panel: #33271B;
+  --color-accent-soft: #F4E4C1;
+  --color-gold-soft: #FAF2E2;
+  --color-input-bg: #FFFFFF;
+  --color-badge-bg: #FFFFFF;
+  color-scheme: light;
+}
+
+[data-theme="modern-light"] {
+  --color-primary-bg: #F8FAFC;
+  --color-secondary-bg: #EDF2F7;
+  --color-card-bg: #FFFFFF;
+  --color-primary-action: #4F46E5;
+  --color-primary-action-hover: #4338CA;
+  --color-primary-text: #FFFFFF;
+  --color-golden-accent: #D97706;
+  --color-main-text: #0F172A;
+  --color-secondary-text: #475569;
+  --color-borders: #CBD5E1;
+  --color-dark-panel: #0F172A;
+  --color-accent-soft: #EEF2FF;
+  --color-gold-soft: #FEF3C7;
+  --color-input-bg: #FFFFFF;
+  --color-badge-bg: #FFFFFF;
+  color-scheme: light;
+}
+
+[data-theme="modern-dark"],
+html.dark[data-theme="modern-dark"],
+html.dark {
+  --color-primary-bg: #0B0F19;
+  --color-secondary-bg: #111827;
+  --color-card-bg: #1A2234;
+  --color-primary-action: #6366F1;
+  --color-primary-action-hover: #4F46E5;
+  --color-primary-text: #FFFFFF;
+  --color-golden-accent: #F59E0B;
+  --color-main-text: #F8FAFC;
+  --color-secondary-text: #94A3B8;
+  --color-borders: #2D3748;
+  --color-dark-panel: #111827;
+  --color-accent-soft: #1E1B4B;
+  --color-gold-soft: #2D2411;
+  --color-input-bg: #141B2D;
+  --color-badge-bg: #1A2234;
+  color-scheme: dark;
+}
+
+@theme {
+  --color-primary-bg: var(--color-primary-bg);
+  --color-secondary-bg: var(--color-secondary-bg);
+  --color-card-bg: var(--color-card-bg);
+  --color-primary-action: var(--color-primary-action);
+  --color-primary-action-hover: var(--color-primary-action-hover);
+  --color-primary-text: var(--color-primary-text);
+  --color-golden-accent: var(--color-golden-accent);
+  --color-main-text: var(--color-main-text);
+  --color-secondary-text: var(--color-secondary-text);
+  --color-borders: var(--color-borders);
+  --color-dark-panel: var(--color-dark-panel);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-gold-soft: var(--color-gold-soft);
+  --color-input-bg: var(--color-input-bg);
+  --color-badge-bg: var(--color-badge-bg);
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: 'Playfair Display', Georgia, Cambria, serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  body {
+    background-color: var(--color-primary-bg);
+    color: var(--color-main-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  ::selection {
+    background-color: var(--color-primary-action);
+    color: var(--color-primary-text);
+  }
+
+  /* Accessible focus states with strong contrast */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-primary-action);
+    outline-offset: 2px;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes wordFadeSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-word-fade-in {
+  animation: wordFadeSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-word-fade-in {
+    animation: fadeIn 0.2s ease forwards !important;
+    transform: none !important;
+  }
+}
