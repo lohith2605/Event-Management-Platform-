@@ -189,13 +189,21 @@ export const adminLogin = async (req, res, next) => {
  * @access  Private
  */
 export const getMe = async (req, res) => {
+  const normalizedRole = (req.user.role || 'attendee').toLowerCase();
+  const safeRole =
+    normalizedRole === 'admin'
+      ? 'admin'
+      : normalizedRole === 'organizer'
+      ? 'organizer'
+      : 'attendee';
+
   res.status(200).json({
     success: true,
     user: {
       id: req.user._id,
       name: req.user.name,
       email: req.user.email,
-      role: req.user.role,
+      role: safeRole,
       createdAt: req.user.createdAt,
     },
   });
@@ -483,6 +491,13 @@ export const googleAuth = async (req, res, next) => {
 
       if (!user.avatar && picture) {
         user.avatar = picture;
+        needsSave = true;
+      }
+
+      // 3. Ensure role is valid UTSAV role
+      const validRoles = ['admin', 'organizer', 'attendee'];
+      if (!validRoles.includes(user.role)) {
+        user.role = 'attendee';
         needsSave = true;
       }
 

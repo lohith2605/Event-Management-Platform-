@@ -26,19 +26,27 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     return <Navigate to={targetLogin} state={{ from: location }} replace />;
   }
 
-  // Role authorization check
-  if (allowedRoles && allowedRoles.length > 0 && !allowedRoles.includes(role)) {
-    // Redirect to user's own authorized dashboard
-    if (role === 'admin') {
-      return <Navigate to="/admin" replace />;
+  // Role authorization check (case-insensitive with fallback to attendee)
+  const normalizedRole = (role || 'attendee').toLowerCase();
+  const hasAccess =
+    !allowedRoles ||
+    allowedRoles.length === 0 ||
+    allowedRoles.map((r) => r.toLowerCase()).includes(normalizedRole);
+
+  if (!hasAccess) {
+    const targetDashboard =
+      normalizedRole === 'admin'
+        ? '/admin'
+        : normalizedRole === 'organizer'
+        ? '/organizer/dashboard'
+        : '/attendee';
+
+    // Guard against self-redirect loops
+    if (location.pathname === targetDashboard || location.pathname.startsWith(targetDashboard)) {
+      return children;
     }
-    if (role === 'organizer') {
-      return <Navigate to="/organizer/dashboard" replace />;
-    }
-    if (role === 'attendee') {
-      return <Navigate to="/attendee" replace />;
-    }
-    return <Navigate to="/" replace />;
+
+    return <Navigate to={targetDashboard} replace />;
   }
 
   return children;

@@ -11,6 +11,7 @@ import {
   getAdminBookings,
   getAdminBookingById,
   cancelAndRefundBooking,
+  reconcileBookingRefund,
   getAdminReviews,
   moderateReview,
   getAdminAuditLogs,
@@ -44,6 +45,7 @@ router.put('/users/:id/status', updateUserStatus);
 router.get('/bookings', getAdminBookings);
 router.get('/bookings/:id', getAdminBookingById);
 router.post('/bookings/:id/cancel-refund', cancelAndRefundBooking);
+router.post('/bookings/:id/sync-refund', reconcileBookingRefund);
 
 // Review Moderation
 router.get('/reviews', getAdminReviews);

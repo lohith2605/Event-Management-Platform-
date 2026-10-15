@@ -11,6 +11,7 @@ import {
   releaseExpiredBookingHolds,
 } from '../utils/checkoutHold.js';
 import { issueTicketsForBooking } from '../utils/ticketIssuer.js';
+import { sendConfirmationEmailForBooking } from '../services/emailService.js';
 
 /**
  * @desc    Create a Razorpay order for an existing pending booking
@@ -271,6 +272,10 @@ export const verifyPayment = async (req, res, next) => {
     } catch (err) {
       // Non-blocking notification creation
     }
+
+    // Automated Booking Confirmation & Digital Ticket Email (Phase 2)
+    // Non-blocking: Email errors will be recorded on booking but will not undo payment or tickets
+    await sendConfirmationEmailForBooking(booking._id);
 
     res.status(200).json({
       success: true,

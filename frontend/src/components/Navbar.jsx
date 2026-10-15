@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   Bell,
   Search,
+  ShieldCheck,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
 import ThemeSwitcher from './ThemeSwitcher';
@@ -366,6 +367,19 @@ export default function Navbar() {
               )
             ) : (
               <>
+                {/* Landing page only: Admin Portal Login button */}
+                {location.pathname === '/' && (
+                  <Link
+                    to="/admin/login"
+                    className="text-sm font-semibold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 border border-[var(--color-borders)] bg-[var(--color-secondary-bg)]/50 hover:bg-[var(--color-secondary-bg)] text-[var(--color-secondary-text)] hover:text-[var(--color-primary-action)] hover:border-[var(--color-primary-action)]/50 shadow-2xs"
+                    title="Administrator Login"
+                    aria-label="Admin Login"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-[var(--color-primary-action)]" />
+                    <span>Admin Login</span>
+                  </Link>
+                )}
+
                 <Link
                   to="/login"
                   className={`text-sm font-semibold px-4 py-2.5 rounded-xl transition-all ${
@@ -593,6 +607,18 @@ export default function Navbar() {
               </div>
             ) : (
               <>
+                {/* Landing page only: Admin Portal Login button */}
+                {location.pathname === '/' && (
+                  <Link
+                    to="/admin/login"
+                    onClick={closeMenu}
+                    className="flex items-center justify-center gap-2 w-full py-2.5 text-sm font-semibold text-[var(--color-secondary-text)] bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] rounded-xl hover:text-[var(--color-primary-action)] hover:border-[var(--color-primary-action)]/40 transition-colors"
+                  >
+                    <ShieldCheck className="w-4 h-4 text-[var(--color-primary-action)]" />
+                    <span>Admin Login</span>
+                  </Link>
+                )}
+
                 <Link
                   to="/login"
                   onClick={closeMenu}

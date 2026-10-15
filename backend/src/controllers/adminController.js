@@ -6,6 +6,8 @@ import Ticket from '../models/Ticket.js';
 import Review from '../models/Review.js';
 import Notification from '../models/Notification.js';
 import AuditLog from '../models/AuditLog.js';
+import { sendCancellationEmailForBooking } from '../services/emailService.js';
+import { processRazorpayRefund, fetchRazorpayRefund } from '../services/refundService.js';
 
 /**
  * Helper to record administrative audit log
@@ -1036,6 +1038,7 @@ export const cancelAndRefundBooking = async (req, res, next) => {
       });
     }
 
+    // Idempotency check: Repeated cancellation requests must not re-process
     if (booking.status === 'cancelled') {
       return res.status(400).json({
         success: false,
@@ -1043,39 +1046,98 @@ export const cancelAndRefundBooking = async (req, res, next) => {
       });
     }
 
-    const trimmedReason = reason.trim() || 'Administrative cancellation and refund';
+    const trimmedReason = (reason || '').trim() || 'Administrative cancellation and refund';
 
-    // Concurrency-safe inventory restoration
+    // 1. Concurrency-safe inventory restoration
     await Event.findByIdAndUpdate(booking.eventId, {
       $inc: { spotsLeft: booking.quantity },
     });
 
-    // Update booking record
+    // 2. Mark booking cancelled and record audit attributes
     booking.status = 'cancelled';
     booking.cancelledAt = new Date();
     booking.cancellationReason = trimmedReason;
-    booking.paymentStatus = 'refunded';
-    booking.refundedAt = new Date();
-    booking.refundReason = trimmedReason;
-    await booking.save();
+    booking.cancelledBy = req.user._id;
 
-    // Deactivate tickets
+    // 3. Deactivate all associated tickets
     await Ticket.updateMany(
       { bookingId: booking._id },
       { status: 'cancelled' }
     );
 
-    // Notify attendee
-    await Notification.create({
-      userId: booking.userId,
-      title: 'Booking Cancelled & Refunded',
-      message: `Your booking ${booking.bookingReference} has been cancelled and refunded by UTSAV administration. Reason: ${trimmedReason}`,
-      type: 'booking_cancelled',
-      link: '/attendee/bookings',
-      metadata: { bookingReference: booking.bookingReference, reason: trimmedReason },
-    });
+    // 4. Process Refund according to payment state and method
+    const isPaid =
+      (booking.paymentStatus === 'completed' || booking.paymentStatus === 'refunded') &&
+      booking.totalAmount > 0;
+    const hasRazorpayPayment = !!booking.razorpayPaymentId;
 
-    // Audit log
+    if (isPaid && hasRazorpayPayment) {
+      // Initiate verified Razorpay refund
+      const refundResult = await processRazorpayRefund({
+        paymentId: booking.razorpayPaymentId,
+        amount: booking.totalAmount, // Server-validated amount, never trusting client
+        bookingRef: booking.bookingReference,
+        reason: trimmedReason,
+        adminId: req.user._id,
+      });
+
+      if (refundResult.success) {
+        booking.refundStatus = refundResult.status; // 'processed' or 'initiated'
+        booking.razorpayRefundId = refundResult.refundId || '';
+        booking.refundAmount = refundResult.amount || booking.totalAmount;
+        booking.refundReason = trimmedReason;
+        booking.refundError = '';
+
+        if (refundResult.status === 'processed') {
+          booking.paymentStatus = 'refunded';
+          booking.refundedAt = new Date();
+        } else {
+          // If refund is 'pending'/'initiated' at provider, keep paymentStatus as completed until cleared
+          booking.paymentStatus = 'completed';
+        }
+      } else {
+        // Refund initiation failed at provider
+        booking.refundStatus = 'failed';
+        booking.refundError = refundResult.error || 'Payment gateway refund failed';
+        booking.refundAmount = booking.totalAmount;
+        booking.refundReason = trimmedReason;
+      }
+    } else if (booking.totalAmount === 0 || booking.paymentStatus === 'free') {
+      // Free event bookings require no financial refund
+      booking.refundStatus = 'not_applicable';
+      booking.paymentStatus = 'free';
+      booking.refundAmount = 0;
+      booking.refundReason = 'Free pass cancellation';
+    } else {
+      // Unpaid or expired hold bookings
+      booking.refundStatus = 'none';
+      booking.paymentStatus = 'failed';
+      booking.refundAmount = 0;
+      booking.refundReason = trimmedReason;
+    }
+
+    await booking.save();
+
+    // 5. In-app Notification for attendee
+    try {
+      await Notification.create({
+        userId: booking.userId,
+        title: 'Booking Cancelled',
+        message: `Your booking ${booking.bookingReference} has been cancelled by UTSAV administration. Reason: ${trimmedReason}`,
+        type: 'booking_cancelled',
+        link: '/attendee/bookings',
+        metadata: {
+          bookingReference: booking.bookingReference,
+          reason: trimmedReason,
+          refundStatus: booking.refundStatus,
+          refundAmount: booking.refundAmount,
+        },
+      });
+    } catch (notifErr) {
+      console.warn('Failed to create in-app notification:', notifErr.message);
+    }
+
+    // 6. Audit Log
     await recordAuditLog({
       req,
       action: 'booking_cancelled_refunded',
@@ -1083,13 +1145,94 @@ export const cancelAndRefundBooking = async (req, res, next) => {
       targetId: booking._id,
       targetTitle: booking.bookingReference,
       reason: trimmedReason,
-      details: `Admin cancelled booking ${booking.bookingReference} (${booking.quantity} passes, ₹${booking.totalAmount}) and marked refunded.`,
+      details: `Admin cancelled booking ${booking.bookingReference} (${booking.quantity} passes, ₹${booking.totalAmount}). Refund Status: ${booking.refundStatus}.`,
+      metadata: {
+        refundStatus: booking.refundStatus,
+        refundAmount: booking.refundAmount,
+        razorpayRefundId: booking.razorpayRefundId,
+      },
+    });
+
+    // 7. Dispatch Automated Attendee Cancellation & Refund Email (Non-blocking)
+    const emailResult = await sendCancellationEmailForBooking(booking._id);
+
+    res.status(200).json({
+      success: true,
+      message: `Booking ${booking.bookingReference} has been cancelled. Inventory restored and cancellation notification dispatched.`,
+      booking,
+      refundStatus: booking.refundStatus,
+      cancellationEmailDispatched: !!emailResult.success,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Reconcile asynchronous refund status with Razorpay
+ * @route   POST /api/admin/bookings/:id/sync-refund
+ * @access  Private (Admin only)
+ */
+export const reconcileBookingRefund = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid booking ID format.',
+      });
+    }
+
+    const booking = await Booking.findById(id).populate('eventId');
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found.',
+      });
+    }
+
+    if (!booking.razorpayRefundId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No Razorpay refund reference recorded for this booking.',
+      });
+    }
+
+    const refundCheck = await fetchRazorpayRefund(booking.razorpayRefundId);
+    if (!refundCheck.success) {
+      return res.status(500).json({
+        success: false,
+        message: `Failed to fetch refund status from provider: ${refundCheck.error}`,
+      });
+    }
+
+    const previousRefundStatus = booking.refundStatus;
+    booking.refundStatus = refundCheck.status;
+
+    if (refundCheck.status === 'processed') {
+      booking.paymentStatus = 'refunded';
+      booking.refundedAt = booking.refundedAt || new Date();
+    } else if (refundCheck.status === 'failed') {
+      booking.refundError = 'Refund marked as failed by payment provider.';
+    }
+
+    await booking.save();
+
+    await recordAuditLog({
+      req,
+      action: 'refund_status_reconciled',
+      targetType: 'Booking',
+      targetId: booking._id,
+      targetTitle: booking.bookingReference,
+      details: `Reconciled refund status for ${booking.bookingReference}: '${previousRefundStatus}' -> '${refundCheck.status}'.`,
     });
 
     res.status(200).json({
       success: true,
-      message: `Booking ${booking.bookingReference} has been cancelled and refunded. Inventory has been restored.`,
+      message: `Refund status reconciled: ${refundCheck.status}`,
       booking,
+      refundStatus: booking.refundStatus,
     });
   } catch (error) {
     next(error);

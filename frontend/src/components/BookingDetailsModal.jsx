@@ -187,6 +187,23 @@ export default function BookingDetailsModal({ booking, onClose, onBookingUpdated
             </div>
           )}
 
+          {/* Email Confirmation Notice */}
+          {booking.status === 'confirmed' && (
+            <div className="p-3 bg-[var(--color-secondary-bg)]/60 rounded-xl space-y-1 text-xs border border-[var(--color-borders)]">
+              <span className="text-[10px] uppercase font-bold text-[var(--color-secondary-text)]">
+                Email Confirmation
+              </span>
+              <div className="flex justify-between items-center text-[11px]">
+                <span className="text-[var(--color-secondary-text)]">Digital Passes:</span>
+                <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                  {booking.confirmationEmailSent
+                    ? `✓ Dispatched to ${booking.attendeeEmail}`
+                    : `Dispatched to ${booking.attendeeEmail}`}
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Cancellation Info or Action */}
           {isCancelled ? (
             <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 space-y-1">

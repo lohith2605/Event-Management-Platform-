@@ -10,6 +10,10 @@ import {
   releaseExpiredBookingHolds,
 } from '../utils/checkoutHold.js';
 import { issueTicketsForBooking } from '../utils/ticketIssuer.js';
+import {
+  sendConfirmationEmailForBooking,
+  sendCancellationEmailForBooking,
+} from '../services/emailService.js';
 
 /**
  * @desc    Create a new booking (Free instant confirm or Paid pending gateway with 10-minute hold)
@@ -110,6 +114,10 @@ export const createBooking = async (req, res, next) => {
         link: '/attendee/tickets',
         metadata: { bookingReference, eventId: updatedEvent._id },
       });
+
+      // Automated Booking Confirmation & Digital Ticket Email (Phase 2)
+      // Safe & non-blocking: email delivery failure will not rollback booking or tickets
+      await sendConfirmationEmailForBooking(booking._id);
     } else {
       // Paid event: automatically create Razorpay order if gateway is configured
       const razorpay = getRazorpayInstance();
@@ -330,8 +338,9 @@ export const cancelBooking = async (req, res, next) => {
     booking.status = 'cancelled';
     booking.cancelledAt = new Date();
     booking.cancellationReason = reason.trim();
-    if (booking.paymentStatus === 'free') {
-      booking.paymentStatus = 'refunded';
+    booking.cancelledBy = req.user._id;
+    if (booking.paymentStatus === 'free' || booking.totalAmount === 0) {
+      booking.refundStatus = 'not_applicable';
     }
     await booking.save();
 
@@ -342,14 +351,21 @@ export const cancelBooking = async (req, res, next) => {
     );
 
     // Notify attendee
-    await Notification.create({
-      userId: req.user._id,
-      title: 'Booking Cancelled',
-      message: `Your booking ${booking.bookingReference} has been cancelled and tickets have been deactivated.`,
-      type: 'booking_cancelled',
-      link: '/attendee/bookings',
-      metadata: { bookingReference: booking.bookingReference },
-    });
+    try {
+      await Notification.create({
+        userId: req.user._id,
+        title: 'Booking Cancelled',
+        message: `Your booking ${booking.bookingReference} has been cancelled and tickets have been deactivated.`,
+        type: 'booking_cancelled',
+        link: '/attendee/bookings',
+        metadata: { bookingReference: booking.bookingReference },
+      });
+    } catch (notifErr) {
+      // ignore
+    }
+
+    // Dispatch automated cancellation email (non-blocking)
+    await sendCancellationEmailForBooking(booking._id);
 
     res.status(200).json({
       success: true,

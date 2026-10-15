@@ -115,9 +115,19 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const normalizedRole = user?.role ? String(user.role).toLowerCase() : null;
+  const safeRole =
+    normalizedRole === 'admin'
+      ? 'admin'
+      : normalizedRole === 'organizer'
+      ? 'organizer'
+      : normalizedRole
+      ? 'attendee'
+      : null;
+
   const value = {
     user,
-    role: user?.role || null,
+    role: safeRole,
     isAuthenticated: !!user,
     isLoading,
     checkAuth,

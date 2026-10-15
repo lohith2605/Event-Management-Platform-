@@ -81,17 +81,31 @@ export default function AdminBookingDetailModal({
 
         {/* Body */}
         <div className="p-6 space-y-6 overflow-y-auto flex-1 text-xs">
-          {/* Cancellation notice */}
+          {/* Cancellation & Refund notice */}
           {booking.status === 'cancelled' && (
-            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 space-y-1">
+            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 space-y-2">
               <span className="font-bold flex items-center gap-1.5 text-xs">
                 <XCircle className="w-4 h-4 shrink-0" />
-                <span>Order Cancelled & Refunded</span>
+                <span>Order Cancelled & Passes Deactivated</span>
               </span>
               <p className="text-[11px] leading-relaxed">
                 Cancelled on: {booking.cancelledAt ? new Date(booking.cancelledAt).toLocaleString() : 'N/A'}<br />
                 Reason: {booking.cancellationReason || 'Administrative cancellation'}
               </p>
+              <div className="pt-2 border-t border-red-500/20 flex flex-wrap gap-2 text-[10px]">
+                <span className="px-2 py-0.5 rounded-full font-bold bg-white/70 dark:bg-black/30 border border-red-300 dark:border-red-900">
+                  Refund: {booking.refundStatus ? booking.refundStatus.toUpperCase() : (booking.totalAmount === 0 ? 'FREE PASS' : 'NONE')}
+                  {booking.refundAmount ? ` (₹${booking.refundAmount})` : ''}
+                </span>
+                {booking.razorpayRefundId && (
+                  <span className="px-2 py-0.5 rounded-full font-mono bg-white/70 dark:bg-black/30 border border-red-300 dark:border-red-900">
+                    ID: {booking.razorpayRefundId}
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded-full font-bold bg-white/70 dark:bg-black/30 border border-red-300 dark:border-red-900">
+                  Email: {booking.cancellationEmailSent ? '✓ Sent to Attendee' : (booking.cancellationEmailStatus || 'Pending')}
+                </span>
+              </div>
             </div>
           )}
 

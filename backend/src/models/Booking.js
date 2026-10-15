@@ -95,6 +95,28 @@ const BookingSchema = new mongoose.Schema(
     paidAt: {
       type: Date,
     },
+    confirmationEmailSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    confirmationEmailSentAt: {
+      type: Date,
+    },
+    confirmationEmailStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'sent', 'failed'],
+      default: 'pending',
+      index: true,
+    },
+    confirmationEmailError: {
+      type: String,
+      default: '',
+    },
+    confirmationEmailMessageId: {
+      type: String,
+      default: '',
+    },
     attendeeName: {
       type: String,
       required: [true, 'Attendee name is required'],
@@ -124,12 +146,74 @@ const BookingSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    cancellationEmailSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    cancellationEmailSentAt: {
+      type: Date,
+    },
+    cancellationEmailStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'sent', 'failed'],
+      default: 'pending',
+      index: true,
+    },
+    cancellationEmailError: {
+      type: String,
+      default: '',
+    },
+    cancellationEmailMessageId: {
+      type: String,
+      default: '',
+    },
+    refundStatus: {
+      type: String,
+      enum: ['none', 'not_applicable', 'initiated', 'processed', 'failed'],
+      default: 'none',
+      index: true,
+    },
+    refundAmount: {
+      type: Number,
+      default: 0,
+    },
+    razorpayRefundId: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+    },
+    refundError: {
+      type: String,
+      default: '',
+    },
     refundedAt: {
       type: Date,
     },
     refundReason: {
       type: String,
       trim: true,
+      default: '',
+    },
+    refundEmailSent: {
+      type: Boolean,
+      default: false,
+    },
+    refundEmailSentAt: {
+      type: Date,
+    },
+    refundEmailStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'sent', 'failed'],
+      default: 'pending',
+    },
+    refundEmailMessageId: {
+      type: String,
       default: '',
     },
     transactionReference: {
