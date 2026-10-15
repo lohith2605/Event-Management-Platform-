@@ -15,7 +15,12 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { createBookingApi } from '../api/attendee';
+import {
+  createBookingApi,
+  verifyPaymentApi,
+  recordPaymentFailureApi,
+} from '../api/attendee';
+import { loadRazorpayScript } from '../utils/razorpay';
 
 export default function BookingModal({ event, onClose, onBookingSuccess }) {
   const navigate = useNavigate();
@@ -64,17 +69,118 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
         ticketType: isFree ? 'General Admission (Free Pass)' : 'Standard Admission',
       });
 
-      if (res && res.success) {
+      if (!res || !res.success) {
+        setError(res?.message || 'Failed to complete booking. Please try again.');
+        setSubmitting(false);
+        return;
+      }
+
+      // Free events confirm immediately
+      if (isFree) {
         setSuccessData(res);
         if (onBookingSuccess) {
           onBookingSuccess(res);
         }
+        setSubmitting(false);
+        return;
+      }
+
+      // Paid event: Launch Razorpay Checkout
+      if (res.order) {
+        const isScriptLoaded = await loadRazorpayScript();
+        if (!isScriptLoaded || !window.Razorpay) {
+          setError('Payment checkout failed to initialize. Please check your internet connection or disable adblockers.');
+          setSubmitting(false);
+          return;
+        }
+
+        const razorpayKey =
+          res.order.keyId || res.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID;
+
+        const options = {
+          key: razorpayKey,
+          amount: res.order.amount,
+          currency: res.order.currency || 'INR',
+          name: 'UTSAV',
+          description: `${quantity}x ${event.title}`,
+          order_id: res.order.id,
+          prefill: {
+            name: user?.name || '',
+            email: user?.email || '',
+            contact: user?.phone || '',
+          },
+          theme: {
+            color: '#6366f1',
+          },
+          handler: async (paymentResponse) => {
+            // NEVER mark booking as paid on frontend alone!
+            // Server-side verification of payment signature
+            setSubmitting(true);
+            try {
+              const verifyRes = await verifyPaymentApi({
+                bookingId: res.booking._id,
+                razorpay_order_id: paymentResponse.razorpay_order_id,
+                razorpay_payment_id: paymentResponse.razorpay_payment_id,
+                razorpay_signature: paymentResponse.razorpay_signature,
+              });
+
+              if (verifyRes && verifyRes.success) {
+                setSuccessData(verifyRes);
+                if (onBookingSuccess) {
+                  onBookingSuccess(verifyRes);
+                }
+              } else {
+                setError(verifyRes?.message || 'Payment verification failed on server.');
+              }
+            } catch (vErr) {
+              setError(vErr.message || 'Payment verification failed. Please contact support.');
+            } finally {
+              setSubmitting(false);
+            }
+          },
+          modal: {
+            ondismiss: async () => {
+              setSubmitting(false);
+              try {
+                await recordPaymentFailureApi({
+                  bookingId: res.booking._id,
+                  razorpay_order_id: res.order.id,
+                  error: { description: 'Checkout window dismissed by attendee' },
+                });
+              } catch (e) {
+                // Non-blocking
+              }
+              setError('Payment window closed. Your reservation is held for 10 minutes. You can complete payment from My Bookings.');
+            },
+          },
+        };
+
+        const rzp = new window.Razorpay(options);
+        rzp.on('payment.failed', async (failedData) => {
+          setSubmitting(false);
+          try {
+            await recordPaymentFailureApi({
+              bookingId: res.booking._id,
+              razorpay_order_id: res.order.id,
+              error: failedData.error,
+            });
+          } catch (e) {
+            // Non-blocking
+          }
+          setError(`Payment failed: ${failedData.error?.description || 'Transaction was declined.'}`);
+        });
+
+        rzp.open();
       } else {
-        setError(res?.message || 'Failed to complete booking. Please try again.');
+        // Fallback if gateway is in maintenance or pending
+        setSuccessData(res);
+        if (onBookingSuccess) {
+          onBookingSuccess(res);
+        }
+        setSubmitting(false);
       }
     } catch (err) {
       setError(err.message || 'An error occurred during booking. Please try again.');
-    } finally {
       setSubmitting(false);
     }
   };
@@ -117,12 +223,12 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
 
               <div>
                 <h3 className="font-extrabold text-xl text-[var(--color-main-text)] font-serif">
-                  {isFree ? 'Booking Confirmed!' : 'Booking Reserved'}
+                  {isFree ? 'Booking Confirmed!' : 'Payment Verified & Confirmed!'}
                 </h3>
                 <p className="text-xs text-[var(--color-secondary-text)] mt-1">
                   {isFree
                     ? `Your ${quantity} digital pass${quantity > 1 ? 'es are' : ' is'} issued and ready for admission.`
-                    : 'Your reservation is recorded. Payment gateway is pending configuration.'}
+                    : `Payment verified successfully. Your ${quantity} digital pass${quantity > 1 ? 'es are' : ' is'} ready in My Tickets.`}
                 </p>
               </div>
 
@@ -301,7 +407,7 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                       </>
                     ) : (
                       <>
-                        <span>Reserve Booking • ₹{totalPrice}</span>
+                        <span>Pay & Confirm • ₹{totalPrice}</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}

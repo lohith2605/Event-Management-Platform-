@@ -1,6 +1,9 @@
 import { motion } from 'motion/react';
 import { Calendar, MapPin, Ticket, Users, Globe, Video } from 'lucide-react';
 
+const DEFAULT_EVENT_IMAGE =
+  'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
+
 export default function EventCard({ event, onBook }) {
   const isFree = event.priceNumber === 0;
 
@@ -14,9 +17,13 @@ export default function EventCard({ event, onBook }) {
       {/* Event Image & Badges */}
       <div className="relative aspect-[16/10] overflow-hidden bg-[var(--color-secondary-bg)]">
         <img
-          src={event.image}
+          src={event.image && event.image.startsWith('http') && !event.image.includes('unsplash.com/photos/') ? event.image : DEFAULT_EVENT_IMAGE}
           alt={event.title}
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DEFAULT_EVENT_IMAGE;
+          }}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
 

@@ -70,8 +70,8 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch real published events & category counts
-  const loadData = useCallback(async () => {
+  // Fetch real published events & category counts with resilient retry
+  const loadData = useCallback(async (retryAttempt = 0) => {
     setLoading(true);
     setError(null);
     try {
@@ -91,6 +91,13 @@ export default function HomePage() {
       }
     } catch (err) {
       console.error('Failed to load published events:', err);
+      if (retryAttempt < 2) {
+        // Automatically retry once or twice if backend was warming up
+        setTimeout(() => {
+          loadData(retryAttempt + 1);
+        }, 1200 * (retryAttempt + 1));
+        return;
+      }
       setError(err.message || 'Unable to load events at this time. Please check your connection and try again.');
       setEvents([]);
     } finally {
@@ -99,7 +106,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    loadData();
+    loadData(0);
   }, [loadData]);
 
   // Client-side filtering on genuine fetched events for immediate responsiveness
@@ -461,11 +468,12 @@ export default function HomePage() {
               </p>
               <button
                 type="button"
-                onClick={loadData}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-bold text-xs rounded-xl shadow-xs cursor-pointer hover:bg-[var(--color-primary-action-hover)]"
+                onClick={() => loadData(2)}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-bold text-xs rounded-xl shadow-xs cursor-pointer hover:bg-[var(--color-primary-action-hover)] disabled:opacity-50 transition-all"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Retry Connection</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>{loading ? 'Reconnecting...' : 'Retry Connection'}</span>
               </button>
             </div>
           )}

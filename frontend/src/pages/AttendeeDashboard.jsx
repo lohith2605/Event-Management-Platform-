@@ -24,6 +24,9 @@ import {
   KeyRound,
   Users,
   X,
+  CreditCard,
+  Clock,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
@@ -43,7 +46,11 @@ import {
   fetchProfileApi,
   updateProfileApi,
   updatePasswordApi,
+  createPaymentOrderApi,
+  verifyPaymentApi,
+  recordPaymentFailureApi,
 } from '../api/attendee';
+import { loadRazorpayScript } from '../utils/razorpay';
 import { fetchPublishedEventsApi } from '../api/events';
 import { EVENT_CATEGORIES, CITIES, FORMAT_OPTIONS } from '../config/taxonomy';
 
@@ -400,6 +407,119 @@ export default function AttendeeDashboard() {
     loadOverviewStats();
     loadBookings();
     loadTickets();
+  };
+
+  // Payment State & Handler for Pending Bookings
+  const [paymentProcessingId, setPaymentProcessingId] = useState(null);
+  const [paymentActionError, setPaymentActionError] = useState(null);
+
+  const handleCompletePayment = async (booking) => {
+    setPaymentActionError(null);
+    if (!booking || booking.status !== 'pending') return;
+
+    if (booking.holdExpiresAt && new Date(booking.holdExpiresAt).getTime() <= Date.now()) {
+      setPaymentActionError('The 10-minute reservation hold has expired. The spots have been released.');
+      await loadBookings();
+      return;
+    }
+
+    setPaymentProcessingId(booking._id);
+    try {
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        throw new Error('Razorpay Checkout could not be loaded. Please check your internet connection.');
+      }
+
+      // Secure backend order creation (or reuse of pending order within 10m hold)
+      const orderRes = await createPaymentOrderApi(booking._id);
+      if (!orderRes || !orderRes.success) {
+        throw new Error(orderRes?.message || 'Failed to initialize payment order.');
+      }
+
+      const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_To9oRfix0A0TJX';
+      const order = orderRes.order;
+
+      const options = {
+        key: razorpayKey,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'UTSAV Events',
+        description: `${booking.quantity}x ${booking.eventId?.title || 'Admission'}`,
+        order_id: order.id,
+        prefill: {
+          name: user?.name || booking.attendeeName || '',
+          email: user?.email || booking.attendeeEmail || '',
+          contact: user?.phone || '',
+        },
+        theme: {
+          color: '#6366f1',
+        },
+        handler: async (paymentResponse) => {
+          // Never mark booking as paid on frontend alone!
+          // Server-side verification of payment signature
+          try {
+            setPaymentProcessingId(booking._id);
+            const verifyRes = await verifyPaymentApi({
+              bookingId: booking._id,
+              razorpay_order_id: paymentResponse.razorpay_order_id,
+              razorpay_payment_id: paymentResponse.razorpay_payment_id,
+              razorpay_signature: paymentResponse.razorpay_signature,
+            });
+
+            if (verifyRes && verifyRes.success) {
+              await Promise.all([loadBookings(), loadTickets(), loadOverviewStats()]);
+              if (verifyRes.tickets && verifyRes.tickets.length > 0) {
+                setActiveTicketPass(verifyRes.tickets[0]);
+              }
+            } else {
+              setPaymentActionError(verifyRes?.message || 'Server-side payment verification failed.');
+              await loadBookings();
+            }
+          } catch (vErr) {
+            setPaymentActionError(vErr.message || 'Payment verification failed.');
+            await loadBookings();
+          } finally {
+            setPaymentProcessingId(null);
+          }
+        },
+        modal: {
+          ondismiss: async () => {
+            setPaymentProcessingId(null);
+            try {
+              await recordPaymentFailureApi({
+                bookingId: booking._id,
+                razorpay_order_id: order.id,
+                error: { description: 'Checkout window dismissed by attendee' },
+              });
+            } catch (e) {
+              // Non-blocking
+            }
+            await loadBookings();
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', async (failedData) => {
+        setPaymentProcessingId(null);
+        try {
+          await recordPaymentFailureApi({
+            bookingId: booking._id,
+            razorpay_order_id: order.id,
+            error: failedData?.error || { description: 'Payment transaction failed' },
+          });
+        } catch (e) {
+          // Non-blocking
+        }
+        setPaymentActionError(failedData?.error?.description || 'Payment failed. Please retry.');
+        await loadBookings();
+      });
+      rzp.open();
+    } catch (err) {
+      setPaymentActionError(err.message || 'Payment initiation failed.');
+      setPaymentProcessingId(null);
+      await loadBookings();
+    }
   };
 
   const handleLogout = async () => {
@@ -854,6 +974,23 @@ export default function AttendeeDashboard() {
               </button>
             </div>
 
+            {/* Payment error message banner */}
+            {paymentActionError && (
+              <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-600 dark:text-red-400 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{paymentActionError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPaymentActionError(null)}
+                  className="text-xs font-bold hover:underline cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
+
             {/* Bookings List */}
             {bookingsLoading ? (
               <div className="p-8 text-center text-xs text-[var(--color-secondary-text)] animate-pulse">
@@ -865,6 +1002,12 @@ export default function AttendeeDashboard() {
                   const evt = b.eventId || {};
                   const isCancelled = b.status === 'cancelled';
                   const isConfirmed = b.status === 'confirmed';
+                  const isPending = b.status === 'pending';
+                  const isHoldActive =
+                    isPending &&
+                    b.holdExpiresAt &&
+                    new Date(b.holdExpiresAt).getTime() > Date.now();
+
                   return (
                     <div
                       key={b._id}
@@ -879,7 +1022,7 @@ export default function AttendeeDashboard() {
                           />
                         )}
                         <div className="space-y-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-mono text-xs font-bold text-[var(--color-primary-action)]">
                               {b.bookingReference}
                             </span>
@@ -894,6 +1037,17 @@ export default function AttendeeDashboard() {
                             >
                               {b.status}
                             </span>
+                            {isHoldActive && (
+                              <span className="flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                                <Clock className="w-3 h-3" />
+                                <span>10-min reservation hold</span>
+                              </span>
+                            )}
+                            {b.paymentStatus === 'failed' && (
+                              <span className="text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-500/10 px-2 py-0.5 rounded-full border border-red-500/20">
+                                Payment Failed
+                              </span>
+                            )}
                           </div>
                           <h4 className="font-bold text-sm text-[var(--color-main-text)]">{evt.title}</h4>
                           <div className="text-xs text-[var(--color-secondary-text)] flex items-center gap-3 flex-wrap">
@@ -908,7 +1062,22 @@ export default function AttendeeDashboard() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
+                        {isPending && b.paymentStatus !== 'completed' && (
+                          <button
+                            type="button"
+                            disabled={paymentProcessingId === b._id}
+                            onClick={() => handleCompletePayment(b)}
+                            className="px-3.5 py-2 rounded-xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-[var(--color-primary-text)] text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                          >
+                            {paymentProcessingId === b._id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <CreditCard className="w-3.5 h-3.5" />
+                            )}
+                            <span>Pay Now (₹{b.totalAmount})</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setActiveBookingReceipt(b)}

@@ -62,7 +62,7 @@ const BookingSchema = new mongoose.Schema(
     paymentStatus: {
       type: String,
       enum: {
-        values: ['free', 'pending', 'completed', 'refunded'],
+        values: ['free', 'pending', 'completed', 'failed', 'refunded'],
         message: '{VALUE} is not a valid payment status',
       },
       default: 'free',
@@ -71,6 +71,29 @@ const BookingSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       default: 'free_pass',
+    },
+    razorpayOrderId: {
+      type: String,
+      trim: true,
+      default: '',
+      index: true,
+    },
+    razorpayPaymentId: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    holdExpiresAt: {
+      type: Date,
+      index: true,
+    },
+    paymentFailureReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    paidAt: {
+      type: Date,
     },
     attendeeName: {
       type: String,

@@ -1,10 +1,8 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import dns from 'dns';
 import Event from '../models/Event.js';
 import User from '../models/User.js';
 
-dns.setServers(['8.8.8.8', '8.8.4.4']);
 dotenv.config();
 
 const seedEvents = async () => {

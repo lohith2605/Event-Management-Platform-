@@ -150,6 +150,7 @@ export const getAdminStats = async (req, res, next) => {
       free: 0,
       pending: 0,
       completed: 0,
+      failed: 0,
       refunded: 0,
     };
     paymentStatusCounts.forEach((item) => {

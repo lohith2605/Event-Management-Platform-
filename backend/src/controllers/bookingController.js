@@ -4,21 +4,15 @@ import Booking from '../models/Booking.js';
 import Ticket from '../models/Ticket.js';
 import Event from '../models/Event.js';
 import Notification from '../models/Notification.js';
+import { getRazorpayInstance } from '../config/razorpay.js';
+import {
+  CHECKOUT_HOLD_DURATION_MS,
+  releaseExpiredBookingHolds,
+} from '../utils/checkoutHold.js';
+import { issueTicketsForBooking } from '../utils/ticketIssuer.js';
 
 /**
- * Generate secure HMAC signature for QR ticket
- */
-const generateTicketSignature = (ticketCode, eventId, bookingRef) => {
-  const secret = process.env.JWT_SECRET || 'utsav_super_secure_jwt_secret_key_2026_events_platform';
-  return crypto
-    .createHmac('sha256', secret)
-    .update(`${ticketCode}:${eventId}:${bookingRef}`)
-    .digest('hex')
-    .substring(0, 16);
-};
-
-/**
- * @desc    Create a new booking (Free instant confirm or Paid pending gateway)
+ * @desc    Create a new booking (Free instant confirm or Paid pending gateway with 10-minute hold)
  * @route   POST /api/bookings
  * @access  Private (Attendee / Organizer / Admin)
  */
@@ -40,6 +34,9 @@ export const createBooking = async (req, res, next) => {
         message: 'Please choose between 1 and 10 tickets per booking.',
       });
     }
+
+    // Clean up expired checkout holds before checking capacity
+    await releaseExpiredBookingHolds();
 
     // Check if event exists and is published
     const existingEvent = await Event.findById(eventId);
@@ -65,17 +62,18 @@ export const createBooking = async (req, res, next) => {
       });
     }
 
-    const isFree = updatedEvent.priceNumber === 0;
+    const isFree = (updatedEvent.priceNumber || 0) === 0;
     const unitPrice = updatedEvent.priceNumber || 0;
     const totalAmount = unitPrice * qty;
 
     const bookingReference = `UTSAV-BK-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     // Free events are immediately confirmed with real passes
-    // Paid events are set to 'pending' because live payment gateway credentials are not yet configured
+    // Paid events are set to 'pending' with a strict 10-minute checkout hold
     const bookingStatus = isFree ? 'confirmed' : 'pending';
     const paymentStatus = isFree ? 'free' : 'pending';
-    const paymentMethod = isFree ? 'free_pass' : 'gateway_pending';
+    const paymentMethod = isFree ? 'free_pass' : 'razorpay';
+    const holdExpiresAt = isFree ? null : new Date(Date.now() + CHECKOUT_HOLD_DURATION_MS);
 
     const booking = await Booking.create({
       bookingReference,
@@ -89,6 +87,7 @@ export const createBooking = async (req, res, next) => {
       status: bookingStatus,
       paymentStatus,
       paymentMethod,
+      holdExpiresAt,
       attendeeName: req.user.name,
       attendeeEmail: req.user.email,
       attendeePhone: req.user.phone || '',
@@ -96,40 +95,11 @@ export const createBooking = async (req, res, next) => {
     });
 
     let tickets = [];
+    let orderData = null;
 
     if (isFree) {
       // Issue authentic tickets with secure QR payloads
-      const ticketDocs = [];
-      for (let i = 1; i <= qty; i++) {
-        const ticketCode = `UTSAV-TKT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-        const signature = generateTicketSignature(ticketCode, updatedEvent._id, bookingReference);
-
-        // Safe QR data: ticket identifier, event reference, booking reference, and HMAC verification signature
-        // NEVER contains JWT, session secrets, card data, or sensitive personal data
-        const qrPayload = JSON.stringify({
-          app: 'UTSAV',
-          tkt: ticketCode,
-          ref: bookingReference,
-          evt: updatedEvent._id.toString(),
-          seat: qty > 1 ? `GA-${i}` : 'GA',
-          sig: signature,
-        });
-
-        ticketDocs.push({
-          ticketCode,
-          bookingId: booking._id,
-          bookingReference,
-          eventId: updatedEvent._id,
-          userId: req.user._id,
-          attendeeName: req.user.name,
-          ticketType: ticketType || 'General Admission',
-          seatNumber: qty > 1 ? `GA-${i}` : 'GA',
-          qrData: qrPayload,
-          status: 'valid',
-        });
-      }
-
-      tickets = await Ticket.insertMany(ticketDocs);
+      tickets = await issueTicketsForBooking(booking, updatedEvent, req.user);
 
       // Create booking confirmation notification
       await Notification.create({
@@ -141,11 +111,50 @@ export const createBooking = async (req, res, next) => {
         metadata: { bookingReference, eventId: updatedEvent._id },
       });
     } else {
+      // Paid event: automatically create Razorpay order if gateway is configured
+      const razorpay = getRazorpayInstance();
+      if (razorpay) {
+        try {
+          const amountInPaise = Math.round(totalAmount * 100);
+          const order = await razorpay.orders.create({
+            amount: amountInPaise,
+            currency: 'INR',
+            receipt: bookingReference.substring(0, 40),
+            notes: {
+              bookingId: booking._id.toString(),
+              bookingReference,
+              userId: req.user._id.toString(),
+              eventId: updatedEvent._id.toString(),
+            },
+          });
+
+          booking.razorpayOrderId = order.id;
+          await booking.save();
+
+          orderData = {
+            id: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            receipt: order.receipt,
+            keyId: process.env.RAZORPAY_KEY_ID,
+          };
+        } catch (orderErr) {
+          console.error('Failed to create Razorpay order during booking reservation:', orderErr.message);
+          // Roll back held inventory if payment order creation fails completely
+          await Event.findByIdAndUpdate(updatedEvent._id, { $inc: { spotsLeft: qty } });
+          await Booking.findByIdAndDelete(booking._id);
+          return res.status(500).json({
+            success: false,
+            message: 'Unable to initiate payment order with the gateway. Please try again.',
+          });
+        }
+      }
+
       // Create pending payment notification for paid booking
       await Notification.create({
         userId: req.user._id,
         title: 'Booking Reserved (Payment Pending)',
-        message: `Your booking reservation ${bookingReference} for "${updatedEvent.title}" is saved. Complete payment when gateway checkout is available.`,
+        message: `Your booking reservation ${bookingReference} for "${updatedEvent.title}" is held for 10 minutes. Please complete payment to confirm your passes.`,
         type: 'system',
         link: '/attendee/bookings',
         metadata: { bookingReference, eventId: updatedEvent._id },
@@ -156,9 +165,12 @@ export const createBooking = async (req, res, next) => {
       success: true,
       message: isFree
         ? 'Booking confirmed successfully! Your tickets are ready.'
-        : 'Booking reserved. Paid gateway checkout is currently pending live credentials.',
+        : 'Booking reserved. Please complete payment within 10 minutes to secure your tickets.',
       booking,
       tickets,
+      isFree,
+      order: orderData,
+      keyId: process.env.RAZORPAY_KEY_ID,
       event: {
         id: updatedEvent._id,
         title: updatedEvent.title,
@@ -181,6 +193,9 @@ export const createBooking = async (req, res, next) => {
 export const getMyBookings = async (req, res, next) => {
   try {
     const { status } = req.query;
+
+    // Release any holds that expired before returning updated attendee booking list
+    await releaseExpiredBookingHolds();
 
     const query = { userId: req.user._id };
     if (status && ['confirmed', 'pending', 'cancelled'].includes(status)) {
@@ -220,7 +235,7 @@ export const getBookingById = async (req, res, next) => {
       });
     }
 
-    const booking = await Booking.findById(id).populate(
+    let booking = await Booking.findById(id).populate(
       'eventId',
       'title tagline category date time city venue price priceNumber image format organizer isoDate'
     );
@@ -241,6 +256,15 @@ export const getBookingById = async (req, res, next) => {
         success: false,
         message: 'Forbidden: You do not have permission to view another attendee’s booking.',
       });
+    }
+
+    // If hold expired while pending, release hold
+    if (booking.status === 'pending' && booking.paymentStatus === 'pending' && isBookingHoldExpired(booking)) {
+      await releaseSingleBookingHold(booking);
+      booking = await Booking.findById(id).populate(
+        'eventId',
+        'title tagline category date time city venue price priceNumber image format organizer isoDate'
+      );
     }
 
     // Fetch associated tickets

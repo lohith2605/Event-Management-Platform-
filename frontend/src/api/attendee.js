@@ -170,3 +170,45 @@ export const updatePasswordApi = async ({ currentPassword, newPassword, confirmP
   });
   return handleResponse(res);
 };
+
+// ----------------- RAZORPAY PAYMENTS -----------------
+export const createPaymentOrderApi = async (bookingId) => {
+  const res = await fetch('/api/payments/create-order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ bookingId }),
+  });
+  return handleResponse(res);
+};
+
+export const verifyPaymentApi = async ({
+  bookingId,
+  razorpay_order_id,
+  razorpay_payment_id,
+  razorpay_signature,
+}) => {
+  const res = await fetch('/api/payments/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      bookingId,
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+    }),
+  });
+  return handleResponse(res);
+};
+
+export const recordPaymentFailureApi = async ({ bookingId, razorpay_order_id, error }) => {
+  const res = await fetch('/api/payments/failure', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ bookingId, razorpay_order_id, error }),
+  });
+  return handleResponse(res);
+};
+

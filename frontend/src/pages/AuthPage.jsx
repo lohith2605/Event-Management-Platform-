@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import {
@@ -51,7 +51,7 @@ export default function AuthPage({ initialMode = 'login' }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, register } = useAuth();
+  const { user: currentUser, role: currentRole, isAuthenticated, isLoading: authLoading, login, register, loginWithGoogle } = useAuth();
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -62,6 +62,22 @@ export default function AuthPage({ initialMode = 'login' }) {
       : location.pathname.startsWith('/login')
         ? 'login'
         : initialMode;
+
+  // Immediately redirect already authenticated users to their dashboard
+  useEffect(() => {
+    if (isAuthenticated && !authLoading) {
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
+        navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
+      } else if (currentRole === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (currentRole === 'organizer') {
+        navigate('/organizer/dashboard', { replace: true });
+      } else {
+        navigate('/attendee', { replace: true });
+      }
+    }
+  }, [isAuthenticated, authLoading, currentRole, location.state, navigate]);
 
   // Form states
   const [role, setRole] = useState(
@@ -80,7 +96,7 @@ export default function AuthPage({ initialMode = 'login' }) {
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [googleNotice, setGoogleNotice] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   // Forgot password modal
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -159,7 +175,7 @@ export default function AuthPage({ initialMode = 'login' }) {
         const user = await login(email, password);
         // Direct to authorized destination
         const from = location.state?.from?.pathname;
-        if (from && !from.startsWith('/login') && !from.startsWith('/signup')) {
+        if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
           navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
         } else if (user.role === 'admin') {
           navigate('/admin', { replace: true });
@@ -196,12 +212,37 @@ export default function AuthPage({ initialMode = 'login' }) {
     }
   };
 
-  // Google OAuth placeholder handler
-  const handleGoogleAuth = () => {
-    setGoogleNotice(true);
-    setTimeout(() => {
-      setGoogleNotice(false);
-    }, 4500);
+  // Real Google OAuth handler via Firebase
+  const handleGoogleAuth = async () => {
+    if (isGoogleSubmitting || isSubmitting) return;
+    setServerError('');
+    setIsGoogleSubmitting(true);
+
+    try {
+      const user = await loginWithGoogle();
+
+      // Direct to authorized destination
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
+        navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
+      } else if (user.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (user.role === 'organizer') {
+        navigate('/organizer/dashboard', { replace: true });
+      } else {
+        navigate('/attendee', { replace: true });
+      }
+    } catch (err) {
+      if (err.code === 'auth/popup-closed-by-user') {
+        // User voluntarily closed the popup, do not show error banner
+        return;
+      }
+      setServerError(
+        err.message || 'Google authentication could not be completed. Please try again or use email sign-in.'
+      );
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
   };
 
   // Forgot password submission
@@ -444,27 +485,27 @@ export default function AuthPage({ initialMode = 'login' }) {
             </div>
           )}
 
-          {/* Google Auth Notice */}
-          {googleNotice && (
-            <div className="p-3 bg-[var(--color-accent-soft)] border border-[var(--color-primary-action)]/30 rounded-xl flex items-start gap-2 text-xs text-[var(--color-main-text)] animate-fade-in">
-              <Sparkles className="w-4 h-4 text-[var(--color-golden-accent)] shrink-0 mt-0.5" />
-              <p className="leading-relaxed">
-                Google Authentication is staged! Firebase OAuth integration will activate in the next identity milestone.
-              </p>
-            </div>
-          )}
-
           {/* Google Login / Signup Button */}
           <div>
             <button
               type="button"
               onClick={handleGoogleAuth}
-              className="w-full py-2.5 px-4 bg-[var(--color-card-bg)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] rounded-xl text-xs xl:text-sm font-semibold text-[var(--color-main-text)] transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99]"
+              disabled={isGoogleSubmitting || isSubmitting}
+              className="w-full py-2.5 px-4 bg-[var(--color-card-bg)] hover:bg-[var(--color-secondary-bg)] disabled:opacity-60 disabled:cursor-not-allowed border border-[var(--color-borders)] rounded-xl text-xs xl:text-sm font-semibold text-[var(--color-main-text)] transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer active:scale-[0.99]"
             >
-              <GoogleIcon className="w-4 h-4 shrink-0" />
-              <span>
-                {mode === 'login' ? 'Continue with Google' : 'Sign up with Google'}
-              </span>
+              {isGoogleSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary-action)]" />
+                  <span>Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <GoogleIcon className="w-4 h-4 shrink-0" />
+                  <span>
+                    {mode === 'login' ? 'Continue with Google' : 'Sign up with Google'}
+                  </span>
+                </>
+              )}
             </button>
           </div>
 

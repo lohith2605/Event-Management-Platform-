@@ -47,7 +47,7 @@ export default function AdminLoginPage() {
     try {
       const user = await adminLogin(email, password);
       if (user && user.role === 'admin') {
-        const from = location.state?.from?.pathname || '/admin';
+        const from = (location.state?.from?.pathname && location.state.from.pathname !== '/') ? location.state.from.pathname : '/admin';
         navigate(from, { replace: true });
       } else {
         setServerError('Access denied: You do not have administrator permissions.');

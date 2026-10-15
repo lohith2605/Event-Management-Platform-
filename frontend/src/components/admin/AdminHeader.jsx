@@ -90,17 +90,12 @@ export default function AdminHeader({
             </Link>
 
             {/* Signed-in Admin profile badge */}
-            <div className="hidden lg:flex items-center gap-2.5 pl-2 border-l border-[var(--color-borders)]">
-              <div className="w-9 h-9 rounded-xl bg-[var(--color-golden-accent)]/20 text-[var(--color-golden-accent)] border border-[var(--color-golden-accent)]/30 flex items-center justify-center font-bold text-sm">
-                {user?.name ? user.name.charAt(0).toUpperCase() : 'A'}
-              </div>
-              <div className="text-left text-xs leading-tight">
-                <span className="font-bold block text-[var(--color-main-text)] truncate max-w-[120px]">
-                  {user?.name || 'Administrator'}
-                </span>
-                <span className="text-[10px] text-[var(--color-secondary-text)] truncate max-w-[120px] block">
-                  {user?.email}
-                </span>
+            <div className="hidden sm:flex items-center pl-2 border-l border-[var(--color-borders)]">
+              <div
+                className="w-9 h-9 rounded-full bg-[var(--color-golden-accent)]/20 text-[var(--color-golden-accent)] border border-[var(--color-golden-accent)]/30 flex items-center justify-center font-extrabold text-sm shadow-xs"
+                title={`${user?.name || 'Administrator'} (${user?.email || 'admin'})`}
+              >
+                {user?.role === 'admin' ? 'A' : (user?.name ? user.name.charAt(0).toUpperCase() : 'A')}
               </div>
             </div>
 

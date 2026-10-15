@@ -55,6 +55,11 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    googleId: {
+      type: String,
+      sparse: true,
+      index: true,
+    },
     isSuspended: {
       type: Boolean,
       default: false,

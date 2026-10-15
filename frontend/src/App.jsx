@@ -13,7 +13,8 @@ import OrganizerDashboard from './pages/OrganizerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext.jsx';
-import { AuthProvider } from './context/AuthContext.jsx';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { Loader2 } from 'lucide-react';
 
 // Public Layout includes the full marketing and discovery footer
 function PublicLayout({ children }) {
@@ -36,21 +37,66 @@ function DashboardLayout({ children }) {
   );
 }
 
+// Smart Root Route: redirects logged-in users directly to their role-specific dashboard
+function RootRoute() {
+  const { user, role, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-primary-bg)] text-[var(--color-main-text)]">
+        <Loader2 className="w-10 h-10 animate-spin text-[var(--color-primary-action)] mb-3" />
+        <p className="text-xs font-semibold text-[var(--color-secondary-text)]">
+          Verifying security session...
+        </p>
+      </div>
+    );
+  }
+
+  if (isAuthenticated && user) {
+    if (role === 'admin') return <Navigate to="/admin" replace />;
+    if (role === 'organizer') return <Navigate to="/organizer/dashboard" replace />;
+    return <Navigate to="/attendee" replace />;
+  }
+
+  return (
+    <PublicLayout>
+      <HomePage />
+    </PublicLayout>
+  );
+}
+
+// Guest-Only Route: prevents authenticated users from viewing login/signup screens
+function PublicOnlyRoute({ children }) {
+  const { user, role, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-primary-bg)] text-[var(--color-main-text)]">
+        <Loader2 className="w-10 h-10 animate-spin text-[var(--color-primary-action)] mb-3" />
+        <p className="text-xs font-semibold text-[var(--color-secondary-text)]">
+          Verifying security session...
+        </p>
+      </div>
+    );
+  }
+
+  if (isAuthenticated && user) {
+    if (role === 'admin') return <Navigate to="/admin" replace />;
+    if (role === 'organizer') return <Navigate to="/organizer/dashboard" replace />;
+    return <Navigate to="/attendee" replace />;
+  }
+
+  return children;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            {/* Public Discovery Routes (with PublicLayout and marketing Footer) */}
-            <Route
-              path="/"
-              element={
-                <PublicLayout>
-                  <HomePage />
-                </PublicLayout>
-              }
-            />
+            {/* Root Route: Smart landing / attendee dashboard redirection */}
+            <Route path="/" element={<RootRoute />} />
             <Route
               path="/events"
               element={
@@ -69,11 +115,39 @@ export default function App() {
             />
             <Route path="/organizer" element={<Navigate to="/organizers" replace />} />
 
-            {/* Public Authentication Routes */}
-            <Route path="/login" element={<AuthPage initialMode="login" />} />
-            <Route path="/signup" element={<AuthPage initialMode="signup" />} />
-            <Route path="/register" element={<AuthPage initialMode="signup" />} />
-            <Route path="/admin/login" element={<AdminLoginPage />} />
+            {/* Public Authentication Routes (auto-redirect to dashboard if logged in) */}
+            <Route
+              path="/login"
+              element={
+                <PublicOnlyRoute>
+                  <AuthPage initialMode="login" />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/signup"
+              element={
+                <PublicOnlyRoute>
+                  <AuthPage initialMode="signup" />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicOnlyRoute>
+                  <AuthPage initialMode="signup" />
+                </PublicOnlyRoute>
+              }
+            />
+            <Route
+              path="/admin/login"
+              element={
+                <PublicOnlyRoute>
+                  <AdminLoginPage />
+                </PublicOnlyRoute>
+              }
+            />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 

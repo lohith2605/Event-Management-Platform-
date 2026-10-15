@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import { getApps } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { initializeFirebaseAdmin } from '../config/firebaseAdmin.js';
 import User from '../models/User.js';
 import { sendTokenResponse } from '../utils/token.js';
 import { sendEmail, sendPasswordResetEmail } from '../services/emailService.js';
@@ -393,3 +396,121 @@ export const resetPassword = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * @desc    Authenticate or register user via verified Google Firebase ID Token
+ * @route   POST /api/auth/google
+ * @access  Public
+ */
+export const googleAuth = async (req, res, next) => {
+  try {
+    const { idToken } = req.body;
+
+    if (!idToken || typeof idToken !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid Google ID token is required.',
+      });
+    }
+
+    // Initialize Firebase Admin SDK if not already initialized
+    if (getApps().length === 0) {
+      initializeFirebaseAdmin();
+    }
+
+    if (getApps().length === 0) {
+      return res.status(500).json({
+        success: false,
+        message: 'Google authentication service is currently unavailable. Server credentials not configured.',
+      });
+    }
+
+    // Verify token with Firebase Admin
+    let decodedToken;
+    try {
+      decodedToken = await getAuth().verifyIdToken(idToken);
+    } catch (verifyError) {
+      console.warn('Firebase ID token verification failed:', verifyError.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Google identity verification failed. The provided token is invalid, expired, or malformed.',
+      });
+    }
+
+    const { email, email_verified, name, picture, uid } = decodedToken;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your Google account does not provide an email address.',
+      });
+    }
+
+    if (!email_verified) {
+      return res.status(401).json({
+        success: false,
+        message: 'Your Google email address is not verified. Please verify your email with Google before signing in.',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check if user already exists
+    let user = await User.findOne({ email: normalizedEmail });
+
+    if (user) {
+      // 1. Account Status Enforcement
+      if (user.isSuspended) {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account has been suspended by an administrator. Please contact support.',
+          isSuspended: true,
+        });
+      }
+
+      // 2. Safe Account Linking (Never override role, preserve existing permissions)
+      let needsSave = false;
+
+      if (!user.googleId) {
+        user.googleId = uid;
+        needsSave = true;
+      }
+
+      if ((!user.name || !user.name.trim()) && name) {
+        user.name = name.trim();
+        needsSave = true;
+      }
+
+      if (!user.avatar && picture) {
+        user.avatar = picture;
+        needsSave = true;
+      }
+
+      if (needsSave) {
+        await user.save({ validateBeforeSave: false });
+      }
+
+      return sendTokenResponse(user, 200, res);
+    }
+
+    // 3. New User Registration via Google OAuth
+    // Self-registration is strictly restricted to 'attendee'. Never allow client-supplied roles.
+    const resolvedName = name?.trim() || normalizedEmail.split('@')[0] || 'Attendee';
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+
+    user = await User.create({
+      name: resolvedName,
+      email: normalizedEmail,
+      password: randomPassword,
+      role: 'attendee',
+      googleId: uid,
+      avatar: picture || '',
+    });
+
+    sendTokenResponse(user, 201, res);
+  } catch (error) {
+    console.error('Unhandled error in googleAuth:', error.message);
+    next(error);
+  }
+};
+

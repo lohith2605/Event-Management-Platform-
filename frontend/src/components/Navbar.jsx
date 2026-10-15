@@ -26,7 +26,8 @@ export default function Navbar() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const isLandingPage = location.pathname === '/';
+  // Hide navbar search on pages that already have their own dedicated in-page search interface (Landing page & Explore Events)
+  const hideNavbarSearch = location.pathname === '/' || location.pathname === '/events';
   const { user, role, isAuthenticated, logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -72,6 +73,22 @@ export default function Navbar() {
     if (role === 'admin') return '/admin';
     if (role === 'organizer') return '/organizer/dashboard';
     return '/attendee';
+  };
+
+  const getProfilePath = () => {
+    if (role === 'admin') return '/admin';
+    if (role === 'organizer') return '/organizer/profile';
+    return '/attendee/profile';
+  };
+
+  const getProfileInitial = () => {
+    if (role === 'admin') return 'A';
+    const name = user?.name?.trim();
+    if (name && name.length > 0) {
+      return name[0].toUpperCase();
+    }
+    if (role === 'organizer') return 'O';
+    return 'U';
   };
 
   const getBrandLogoDestination = () => {
@@ -209,8 +226,8 @@ export default function Navbar() {
             </div>
           </Link>
 
-          {/* Search Bar - Appropriate Length Suits in Navbar (Hidden on Landing Page) */}
-          {!isLandingPage && (
+          {/* Search Bar - Appropriate Length Suits in Navbar (Hidden on Landing & Explore Events Pages) */}
+          {!hideNavbarSearch && (
             <form
               onSubmit={handleSearchSubmit}
               className="hidden sm:flex items-center flex-1 max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg mx-2 md:mx-4 relative"
@@ -302,16 +319,14 @@ export default function Navbar() {
                     )}
                   </Link>
 
-                  {/* Compact Profile Access */}
+                  {/* Circular Profile Avatar Button */}
                   <Link
-                    to="/attendee/profile"
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/50 border border-[var(--color-borders)] rounded-xl text-xs font-bold text-[var(--color-main-text)] transition-colors"
-                    title="Profile & Settings"
+                    to={getProfilePath()}
+                    className="w-10 h-10 rounded-full bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-extrabold text-sm flex items-center justify-center shadow-xs hover:ring-2 hover:ring-[var(--color-primary-action)]/50 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                    title={`${user?.name || 'Attendee'} Profile`}
+                    aria-label="Open Profile"
                   >
-                    <div className="w-5 h-5 rounded-full bg-[var(--color-primary-action)]/20 text-[var(--color-primary-action)] flex items-center justify-center text-[10px] font-bold">
-                      {user?.name ? user.name[0].toUpperCase() : 'U'}
-                    </div>
-                    <span className="max-w-[120px] truncate">{user?.name || 'Profile'}</span>
+                    {getProfileInitial()}
                   </Link>
 
                   {/* On-demand Hamburger Menu Button */}
@@ -328,12 +343,14 @@ export default function Navbar() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 pl-1">
+                  {/* Circular Profile Avatar Button */}
                   <Link
-                    to={getDashboardPath()}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 border border-[var(--color-borders)] rounded-xl text-xs font-bold text-[var(--color-main-text)] transition-colors"
+                    to={getProfilePath()}
+                    className="w-10 h-10 rounded-full bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-extrabold text-sm flex items-center justify-center shadow-xs hover:ring-2 hover:ring-[var(--color-primary-action)]/50 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                    title={role === 'admin' ? `Admin Profile (${user?.name || 'Administrator'})` : `${user?.name || 'Organizer'} Profile`}
+                    aria-label="Open Profile"
                   >
-                    <LayoutDashboard className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
-                    <span className="max-w-[140px] truncate">{user?.name || 'Dashboard'}</span>
+                    {getProfileInitial()}
                   </Link>
 
                   <button
@@ -372,8 +389,8 @@ export default function Navbar() {
 
           {/* Mobile Menu & Theme Button */}
           <div className="flex items-center gap-1.5 md:hidden">
-            {/* Mobile Search Toggle Button (Hidden on Landing Page) */}
-            {!isLandingPage && (
+            {/* Mobile Search Toggle Button (Hidden on Landing & Explore Events Pages) */}
+            {!hideNavbarSearch && (
               <button
                 type="button"
                 onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
@@ -414,6 +431,15 @@ export default function Navbar() {
                   )}
                 </Link>
 
+                <Link
+                  to={getProfilePath()}
+                  className="w-8 h-8 rounded-full bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-extrabold text-xs flex items-center justify-center shadow-xs active:scale-95 transition-all"
+                  title={`${user?.name || 'Attendee'} Profile`}
+                  aria-label="Open Profile"
+                >
+                  {getProfileInitial()}
+                </Link>
+
                 <button
                   type="button"
                   onClick={() => setAttendeeDrawerOpen(true)}
@@ -424,22 +450,34 @@ export default function Navbar() {
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="text-[var(--color-main-text)] p-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-colors focus:outline-none"
-                aria-label="Toggle navigation menu"
-                aria-expanded={mobileMenuOpen}
-              >
-                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-              </button>
+              <div className="flex items-center gap-1.5">
+                {isAuthenticated && (
+                  <Link
+                    to={getProfilePath()}
+                    className="w-8 h-8 rounded-full bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-extrabold text-xs flex items-center justify-center shadow-xs active:scale-95 transition-all"
+                    title={role === 'admin' ? `Admin Profile (${user?.name || 'Administrator'})` : `${user?.name || 'Organizer'} Profile`}
+                    aria-label="Open Profile"
+                  >
+                    {getProfileInitial()}
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="text-[var(--color-main-text)] p-2 rounded-xl hover:bg-[var(--color-secondary-bg)] transition-colors focus:outline-none"
+                  aria-label="Toggle navigation menu"
+                  aria-expanded={mobileMenuOpen}
+                >
+                  {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+                </button>
+              </div>
             )}
           </div>
         </div>
       </div>
 
-      {/* Mobile Search Input Drawer (When toggled on small screens, hidden on landing page) */}
-      {!isLandingPage && mobileSearchOpen && (
+      {/* Mobile Search Input Drawer (Hidden on Landing & Explore Events Pages) */}
+      {!hideNavbarSearch && mobileSearchOpen && (
         <div className="sm:hidden px-4 pb-3.5 pt-1 border-t border-[var(--color-borders)] bg-[var(--color-primary-bg)] animate-fade-in">
           <form onSubmit={handleSearchSubmit} className="relative w-full flex items-center" role="search">
             <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
@@ -520,12 +558,20 @@ export default function Navbar() {
           <div className="pt-2 border-t border-[var(--color-borders)] space-y-2.5">
             {isAuthenticated ? (
               <div className="space-y-2">
-                <div className="px-3.5 py-2.5 bg-[var(--color-secondary-bg)] rounded-xl flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-bold text-[var(--color-main-text)]">{user?.name}</p>
-                    <p className="text-[10px] text-[var(--color-secondary-text)]">{user?.email}</p>
+                <Link
+                  to={getProfilePath()}
+                  onClick={closeMenu}
+                  className="px-3.5 py-2.5 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+                  title="Open Profile"
+                >
+                  <div className="w-10 h-10 rounded-full bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-extrabold text-sm flex items-center justify-center shrink-0 shadow-xs">
+                    {getProfileInitial()}
                   </div>
-                </div>
+                  <div className="overflow-hidden">
+                    <p className="text-xs font-bold text-[var(--color-main-text)] truncate">{user?.name}</p>
+                    <p className="text-[10px] text-[var(--color-secondary-text)] truncate">{user?.email}</p>
+                  </div>
+                </Link>
 
                 <Link
                   to={getDashboardPath()}

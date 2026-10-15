@@ -4,9 +4,7 @@ import mongoose from 'mongoose';
  * Returns a safe, informative diagnostic message without exposing
  * connection strings, passwords, or cluster credentials.
  */
-import dns from 'dns';
 
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
 const getSafeDiagnostic = (error) => {
   if (!error) return 'Unknown database error';
 
@@ -70,6 +68,9 @@ export const connectDB = async () => {
   try {
     const conn = await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 15000,
+      maxPoolSize: 10,
+      socketTimeoutMS: 45000,
+      family: 4,
     });
 
     return conn;

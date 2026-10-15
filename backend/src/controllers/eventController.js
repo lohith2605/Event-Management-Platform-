@@ -31,7 +31,8 @@ export const getPublishedEvents = async (req, res, next) => {
 
     // 1. Text Search across title, tagline, venue, and organizer
     if (searchTerm && searchTerm.trim()) {
-      const regex = new RegExp(searchTerm.trim(), 'i');
+      const escaped = searchTerm.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
       query.$or = [
         { title: regex },
         { tagline: regex },

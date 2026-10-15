@@ -81,3 +81,14 @@ export const resetPasswordApi = async (token, password, confirmPassword) => {
   });
   return handleResponse(response);
 };
+
+export const googleAuthApi = async (idToken) => {
+  const response = await fetch('/api/auth/google', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ idToken }),
+  });
+  return handleResponse(response);
+};
+

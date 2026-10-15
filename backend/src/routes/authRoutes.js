@@ -7,6 +7,7 @@ import {
   logout,
   forgotPassword,
   resetPassword,
+  googleAuth,
 } from '../controllers/authController.js';
 import { protect } from '../middlewares/auth.js';
 
@@ -30,6 +31,7 @@ const forgotPasswordLimiter = rateLimit({
 router.post('/register', register);
 router.post('/login', login);
 router.post('/admin-login', adminLogin);
+router.post('/google', googleAuth);
 router.post('/logout', logout);
 router.post('/forgot-password', forgotPasswordLimiter, forgotPassword);
 router.post('/reset-password/:token', resetPassword);
