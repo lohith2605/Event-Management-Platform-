@@ -268,7 +268,7 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-secondary-text)] pt-1 border-t border-[var(--color-borders)]">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                      <span>Authentic server-issued digital passes with instant QR verification.</span>
+                      <span>Official digital passes with instant QR check-in.</span>
                     </div>
                   </div>
 
@@ -316,7 +316,7 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                       <span>Sign In Required for Digital Pass</span>
                     </div>
                     <p className="text-xs text-[var(--color-main-text)] leading-relaxed">
-                      To reserve your verified seat, receive your server-issued dynamic QR admission pass, and access attendee updates, sign in to your UTSAV account or register in seconds.
+                      To reserve your ticket, receive your dynamic QR admission pass, and access event updates, sign in to your UTSAV account or register in seconds.
                     </p>
                   </div>
 

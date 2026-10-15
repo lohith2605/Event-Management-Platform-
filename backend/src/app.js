@@ -12,6 +12,7 @@ import ticketRouter from './routes/ticketRoutes.js';
 import notificationRouter from './routes/notificationRoutes.js';
 import reviewRouter from './routes/reviewRoutes.js';
 import userRouter from './routes/userRoutes.js';
+import organizerRouter from './routes/organizerRoutes.js';
 import { notFoundHandler, errorHandler } from './middlewares/errorHandler.js';
 
 dotenv.config();
@@ -45,6 +46,7 @@ app.use('/api/tickets', ticketRouter);
 app.use('/api/notifications', notificationRouter);
 app.use('/api/reviews', reviewRouter);
 app.use('/api/users', userRouter);
+app.use('/api/organizer', organizerRouter);
 
 // Centralized Error Handling
 app.use(notFoundHandler);

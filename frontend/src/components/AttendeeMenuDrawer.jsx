@@ -65,7 +65,7 @@ export default function AttendeeMenuDrawer({ isOpen, onClose, user, unreadCount 
       label: 'My Tickets',
       path: '/attendee/tickets',
       icon: Sparkles,
-      description: 'Server-verified dynamic QR passes',
+      description: 'Digital passes & entry QR codes',
     },
     {
       id: 'notifications',

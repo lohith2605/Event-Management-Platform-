@@ -149,7 +149,7 @@ export const updatePassword = async (req, res, next) => {
 
     // Update password (triggers bcrypt hashing pre-save hook)
     user.password = newPassword;
-    await user.save();
+    await user.save({ validateBeforeSave: false });
 
     res.status(200).json({
       success: true,

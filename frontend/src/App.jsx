@@ -7,6 +7,7 @@ import OrganizerPage from './pages/OrganizerPage';
 import AuthPage from './pages/AuthPage';
 import AdminLoginPage from './pages/AdminLoginPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import AttendeeDashboard from './pages/AttendeeDashboard';
 import OrganizerDashboard from './pages/OrganizerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/signup" element={<AuthPage initialMode="signup" />} />
             <Route path="/register" element={<AuthPage initialMode="signup" />} />
             <Route path="/admin/login" element={<AdminLoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
             {/* Protected Attendee Routes (Clean DashboardLayout without Footer) */}
@@ -168,6 +170,12 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/organizer/events" element={<Navigate to="/organizer/dashboard?tab=my-events" replace />} />
+            <Route path="/organizer/create-event" element={<Navigate to="/organizer/dashboard?tab=create-event" replace />} />
+            <Route path="/organizer/bookings" element={<Navigate to="/organizer/dashboard?tab=bookings" replace />} />
+            <Route path="/organizer/attendees" element={<Navigate to="/organizer/dashboard?tab=attendees" replace />} />
+            <Route path="/organizer/analytics" element={<Navigate to="/organizer/dashboard?tab=analytics" replace />} />
+            <Route path="/organizer/profile" element={<Navigate to="/organizer/dashboard?tab=profile" replace />} />
 
             {/* Protected Admin Route */}
             <Route
@@ -178,6 +186,13 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route path="/admin/events" element={<Navigate to="/admin?tab=events" replace />} />
+            <Route path="/admin/users" element={<Navigate to="/admin?tab=users" replace />} />
+            <Route path="/admin/bookings" element={<Navigate to="/admin?tab=bookings" replace />} />
+            <Route path="/admin/reviews" element={<Navigate to="/admin?tab=reviews" replace />} />
+            <Route path="/admin/audit-logs" element={<Navigate to="/admin?tab=audit-logs" replace />} />
+            <Route path="/admin/notifications" element={<Navigate to="/admin?tab=notifications" replace />} />
+            <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
 
             {/* Fallback to home */}
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -172,7 +172,7 @@ export default function OrganizerPage() {
                 <Layers className="w-5 h-5" />
               </div>
               <h3 className="font-bold text-sm text-[var(--color-main-text)]">
-                Tiered Ticket Engine
+                Flexible Ticket Tiers
               </h3>
               <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
                 Configure free student passes, VIP lounge packages, and early-bird limits with configurable capacity caps.

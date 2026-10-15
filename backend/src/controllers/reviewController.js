@@ -19,7 +19,7 @@ export const getEventReviews = async (req, res, next) => {
       });
     }
 
-    const reviews = await Review.find({ eventId }).sort({ createdAt: -1 });
+    const reviews = await Review.find({ eventId, status: { $ne: 'hidden' } }).sort({ createdAt: -1 });
 
     const total = reviews.length;
     const averageRating =

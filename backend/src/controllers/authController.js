@@ -1,7 +1,8 @@
 import crypto from 'crypto';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import { sendTokenResponse } from '../utils/token.js';
-import { sendEmail } from '../utils/sendEmail.js';
+import { sendEmail, sendPasswordResetEmail } from '../services/emailService.js';
 
 /**
  * @desc    Register attendee or organizer
@@ -113,6 +114,15 @@ export const login = async (req, res, next) => {
       });
     }
 
+    // 4. Verify account status
+    if (user.isSuspended) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been suspended by an administrator. Please contact support.',
+        isSuspended: true,
+      });
+    }
+
     sendTokenResponse(user, 200, res);
   } catch (error) {
     next(error);
@@ -152,6 +162,15 @@ export const adminLogin = async (req, res, next) => {
       return res.status(403).json({
         success: false,
         message: 'Access Denied: This account does not possess administrator privileges for the Admin Portal.',
+      });
+    }
+
+    // Verify account status
+    if (user.isSuspended) {
+      return res.status(403).json({
+        success: false,
+        message: 'This administrative account has been suspended. Please contact root support.',
+        isSuspended: true,
       });
     }
 
@@ -217,7 +236,7 @@ export const forgotPassword = async (req, res, next) => {
     const normalizedEmail = email.trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail });
 
-    // Consistent security response: do not disclose whether user exists
+    // Consistent security response: do not disclose whether user exists to prevent account enumeration
     const safeResponse = {
       success: true,
       message: 'If an account exists with that email address, a password reset link has been dispatched.',
@@ -227,45 +246,48 @@ export const forgotPassword = async (req, res, next) => {
       return res.status(200).json(safeResponse);
     }
 
-    // Generate reset token
+    // If user's name is missing (legacy account), safely resolve it from linked employee record if present in DB
+    if (!user.name) {
+      try {
+        const db = mongoose.connection.db;
+        let empDoc = null;
+        if (user.employeeId) {
+          empDoc = await db.collection('employees').findOne({ _id: user.employeeId });
+        }
+        if (!empDoc) {
+          empDoc = await db.collection('employees').findOne({ userId: user._id });
+        }
+        if (empDoc && (empDoc.firstName || empDoc.lastName)) {
+          user.name = `${empDoc.firstName || ''} ${empDoc.lastName || ''}`.trim();
+        }
+      } catch (lookupErr) {
+        console.warn('Could not retrieve name from linked legacy profile:', lookupErr.message);
+      }
+    }
+
+    // Generate cryptographically secure reset token (hashed in DB, raw returned for URL)
     const resetToken = user.getResetPasswordToken();
     await user.save({ validateBeforeSave: false });
 
     // Build reset URL targeting frontend route
-    const frontendUrl = process.env.CORS_ORIGIN || 'http://localhost:5173';
+    const frontendUrl = process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
-    const message = `You have requested a password reset for your UTSAV account.\n\nPlease navigate to the following link within 60 minutes to choose a new password:\n\n${resetUrl}\n\nIf you did not request this, please disregard this email.`;
-
     try {
-      await sendEmail({
+      await sendPasswordResetEmail({
         email: user.email,
-        subject: 'UTSAV — Password Reset Request',
-        message,
-        html: `
-          <div style="font-family: sans-serif; line-height: 1.6; color: #292722; max-width: 500px; padding: 20px;">
-            <h2 style="color: #D96342;">UTSAV Password Reset</h2>
-            <p>You requested a password reset for your account (<strong>${user.email}</strong>).</p>
-            <p>Click the button below within 60 minutes to complete the reset:</p>
-            <p style="margin: 25px 0;">
-              <a href="${resetUrl}" style="background-color: #D96342; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
-                Reset Password
-              </a>
-            </p>
-            <p style="font-size: 12px; color: #6D675F;">Or copy and paste this URL into your browser:<br/><a href="${resetUrl}">${resetUrl}</a></p>
-            <hr style="border: none; border-top: 1px solid #E5D9C8; margin: 20px 0;" />
-            <p style="font-size: 11px; color: #6D675F;">If you did not request this, your account remains secure and you can safely ignore this email.</p>
-          </div>
-        `,
+        resetUrl,
+        userName: user.name,
       });
 
       res.status(200).json(safeResponse);
     } catch (err) {
+      // Clear token state if email delivery fails
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save({ validateBeforeSave: false });
 
-      console.error('Email send failed:', err);
+      console.error('Password reset email delivery failed:', err.message);
       return res.status(500).json({
         success: false,
         message: 'Email service could not dispatch the reset notification. Please try again later.',
@@ -283,46 +305,91 @@ export const forgotPassword = async (req, res, next) => {
  */
 export const resetPassword = async (req, res, next) => {
   try {
+    const { token } = req.params;
     const { password, confirmPassword } = req.body;
 
+    if (!token || !token.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'A password reset token is required.',
+      });
+    }
+
     if (!password) {
-      return res.status(400).json({ success: false, message: 'Please provide a new password.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a new password.',
+      });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long.',
+      });
     }
 
     if (confirmPassword && password !== confirmPassword) {
-      return res.status(400).json({ success: false, message: 'Passwords do not match.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Passwords do not match.',
+      });
     }
 
     // Hash the token from URL parameter to compare with database hash
-    const resetPasswordToken = crypto
+    const cleanToken = token.trim();
+    const hashedToken = crypto
       .createHash('sha256')
-      .update(req.params.token)
+      .update(cleanToken)
       .digest('hex');
 
     const user = await User.findOne({
-      resetPasswordToken,
+      resetPasswordToken: hashedToken,
       resetPasswordExpire: { $gt: Date.now() },
     });
 
     if (!user) {
       return res.status(400).json({
         success: false,
-        message: 'Password reset token is invalid, expired, or has already been used.',
+        message: 'Password reset link is invalid or has expired. Please request a new link.',
       });
     }
 
-    // Set new password and invalidate token
+    // If user's name is missing (legacy account), safely resolve it from linked employee record if present in DB
+    if (!user.name) {
+      try {
+        const db = mongoose.connection.db;
+        let empDoc = null;
+        if (user.employeeId) {
+          empDoc = await db.collection('employees').findOne({ _id: user.employeeId });
+        }
+        if (!empDoc) {
+          empDoc = await db.collection('employees').findOne({ userId: user._id });
+        }
+        if (empDoc && (empDoc.firstName || empDoc.lastName)) {
+          user.name = `${empDoc.firstName || ''} ${empDoc.lastName || ''}`.trim();
+        }
+      } catch (lookupErr) {
+        console.warn('Could not retrieve name from linked legacy profile:', lookupErr.message);
+      }
+    }
+
+    // Set new password (will be hashed by User pre('save') hook) and invalidate reset token
     user.password = password;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
-    await user.save();
 
+    // Use validateBeforeSave: false to update only modified authentication fields
+    // without triggering validation errors on unrelated legacy fields (e.g. legacy roles)
+    await user.save({ validateBeforeSave: false });
+
+    // Send fresh session token response with refreshed cookies
     sendTokenResponse(user, 200, res);
   } catch (error) {
-    next(error);
+    console.error('Password reset encountered an unexpected error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected error occurred while resetting your password. Please try again or request a new reset link.',
+    });
   }
 };

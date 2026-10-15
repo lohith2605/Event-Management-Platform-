@@ -105,7 +105,7 @@ export default function EventsPage() {
       }
     } catch (err) {
       console.error('Failed to load published events:', err);
-      setError(err.message || 'Unable to load published events from the server.');
+      setError(err.message || 'Unable to load events at this time. Please check your connection and try again.');
       setEvents([]);
       setTotalCount(0);
     } finally {
@@ -375,7 +375,7 @@ export default function EventsPage() {
           <div className="my-10 p-8 rounded-2xl bg-red-500/10 border border-red-500/30 text-center space-y-3">
             <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
             <h3 className="font-bold text-base text-[var(--color-main-text)]">
-              Unable to retrieve events from server
+              Unable to load events
             </h3>
             <p className="text-xs text-[var(--color-secondary-text)] max-w-md mx-auto">
               {error}

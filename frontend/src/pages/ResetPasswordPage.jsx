@@ -57,7 +57,7 @@ export default function ResetPasswordPage() {
       }, 2500);
     } catch (err) {
       setServerError(
-        err.message || 'The password reset token is invalid or has expired. Please request a new one.'
+        err.message || 'The password reset link is invalid or has expired. Please request a new link.'
       );
     } finally {
       setIsSubmitting(false);

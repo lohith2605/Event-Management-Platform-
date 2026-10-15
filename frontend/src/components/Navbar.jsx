@@ -333,12 +333,7 @@ export default function Navbar() {
                     className="inline-flex items-center gap-2 px-3 py-2 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 border border-[var(--color-borders)] rounded-xl text-xs font-bold text-[var(--color-main-text)] transition-colors"
                   >
                     <LayoutDashboard className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
-                    <span className="max-w-[120px] truncate">{user?.name || 'Dashboard'}</span>
-                    {role && (
-                      <span className="text-[9px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]">
-                        {role}
-                      </span>
-                    )}
+                    <span className="max-w-[140px] truncate">{user?.name || 'Dashboard'}</span>
                   </Link>
 
                   <button
@@ -530,11 +525,6 @@ export default function Navbar() {
                     <p className="text-xs font-bold text-[var(--color-main-text)]">{user?.name}</p>
                     <p className="text-[10px] text-[var(--color-secondary-text)]">{user?.email}</p>
                   </div>
-                  {role && role !== 'attendee' && (
-                    <span className="text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]">
-                      {role}
-                    </span>
-                  )}
                 </div>
 
                 <Link

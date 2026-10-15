@@ -326,7 +326,7 @@ export default function AuthPage({ initialMode = 'login' }) {
 
             <p className="text-xs xl:text-sm opacity-80 leading-relaxed max-w-sm">
               {mode === 'login'
-                ? 'Access your tamper-proof QR tickets, view real-time stage line-ups, and enjoy contactless gate check-in at premier colleges and venues.'
+                ? 'Access your digital QR tickets, view real-time stage line-ups, and enjoy contactless gate check-in at premier colleges and venues.'
                 : 'Whether you are discovering flagship tech hackathons or an organizer orchestrating a campus fest, UTSAV handles ticketing effortlessly.'}
             </p>
 
@@ -342,7 +342,7 @@ export default function AuthPage({ initialMode = 'login' }) {
                       Instant Dynamic QR Passes
                     </span>
                     <span className="text-[9px] text-[var(--color-golden-accent)] font-bold uppercase tracking-wider">
-                      Tamper-Proof
+                      Instant Entry
                     </span>
                   </div>
                   <p className="text-[10px] xl:text-[11px] opacity-75 truncate mt-0.5">
@@ -380,9 +380,9 @@ export default function AuthPage({ initialMode = 'login' }) {
             <span>Verified Organizers</span>
           </div>
           <span>•</span>
-          <span>Tamper-Proof Dynamic QR</span>
+          <span>Dynamic QR Entry</span>
           <span>•</span>
-          <span>Role-Enforced Access</span>
+          <span>Dedicated Dashboards</span>
         </div>
       </aside>
 

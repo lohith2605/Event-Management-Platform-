@@ -90,8 +90,8 @@ export default function HomePage() {
         setCategoryCounts(categoriesRes.categories);
       }
     } catch (err) {
-      console.error('Failed to load published events from MongoDB:', err);
-      setError(err.message || 'Unable to load real events from server. Please verify database connectivity.');
+      console.error('Failed to load published events:', err);
+      setError(err.message || 'Unable to load events at this time. Please check your connection and try again.');
       setEvents([]);
     } finally {
       setLoading(false);
@@ -588,7 +588,7 @@ export default function HomePage() {
                 Dynamic QR Entry
               </h3>
               <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
-                Tamper-proof digital passes delivered to your phone for contactless scanning at gate entry.
+                Secure digital passes delivered to your phone for seamless check-in at gate entry.
               </p>
             </div>
 

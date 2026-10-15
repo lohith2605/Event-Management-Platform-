@@ -93,9 +93,31 @@ const EventSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ['draft', 'pending', 'published', 'rejected', 'cancelled', 'completed'],
-      default: 'published',
+      default: 'pending',
       index: true,
     },
+    rejectionReason: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    cancellationReason: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    registrationDeadline: {
+      type: Date,
+    },
+    ticketTiers: [
+      {
+        name: { type: String, default: 'General Admission', trim: true },
+        price: { type: Number, default: 0, min: 0 },
+        capacity: { type: Number, default: 100, min: 1 },
+        spotsLeft: { type: Number, default: 100, min: 0 },
+        description: { type: String, default: '', trim: true },
+      },
+    ],
   },
   {
     timestamps: true,

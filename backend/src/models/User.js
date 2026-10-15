@@ -55,6 +55,16 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    isSuspended: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    suspensionReason: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     resetPasswordToken: {
       type: String,
       select: false,
@@ -86,8 +96,8 @@ UserSchema.methods.matchPassword = async function (enteredPassword) {
 
 // Generate and hash reset password token
 UserSchema.methods.getResetPasswordToken = function () {
-  // Generate random 20-byte token
-  const resetToken = crypto.randomBytes(20).toString('hex');
+  // Generate random 32-byte cryptographically secure token
+  const resetToken = crypto.randomBytes(32).toString('hex');
 
   // Hash token and set to resetPasswordToken field
   this.resetPasswordToken = crypto
@@ -95,8 +105,8 @@ UserSchema.methods.getResetPasswordToken = function () {
     .update(resetToken)
     .digest('hex');
 
-  // Set expiration to 1 hour
-  this.resetPasswordExpire = Date.now() + 60 * 60 * 1000;
+  // Set expiration to 30 minutes
+  this.resetPasswordExpire = Date.now() + 30 * 60 * 1000;
 
   return resetToken;
 };

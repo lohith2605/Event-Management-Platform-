@@ -1,4 +1,6 @@
 import Event from '../models/Event.js';
+import User from '../models/User.js';
+import Notification from '../models/Notification.js';
 
 /**
  * @desc    Get published upcoming events with filtering, search, and pagination
@@ -226,8 +228,28 @@ export const createEvent = async (req, res, next) => {
       spotsLeft: Number(spotsLeft) || 100,
       totalCapacity: Number(totalCapacity) || 500,
       format: format || 'In-Person',
-      status: 'published',
+      status: req.user.role === 'admin' ? (req.body.status || 'published') : 'pending',
     });
+
+    // Notify admins if event is awaiting approval
+    if (event.status === 'pending') {
+      try {
+        const admins = await User.find({ role: 'admin' }).select('_id');
+        const notifDocs = admins.map((admin) => ({
+          userId: admin._id,
+          title: 'New Event Awaiting Approval',
+          message: `Organizer "${req.user.name}" submitted "${event.title}" for review.`,
+          type: 'admin_alert',
+          link: `/admin?tab=events&eventId=${event._id}`,
+          metadata: { eventId: event._id, organizerId: req.user._id },
+        }));
+        if (notifDocs.length > 0) {
+          await Notification.insertMany(notifDocs);
+        }
+      } catch (e) {
+        console.warn('Failed to dispatch admin notification:', e.message);
+      }
+    }
 
     res.status(201).json({
       success: true,

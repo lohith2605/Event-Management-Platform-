@@ -101,6 +101,19 @@ const BookingSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    refundedAt: {
+      type: Date,
+    },
+    refundReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    transactionReference: {
+      type: String,
+      trim: true,
+      default: '',
+    },
   },
   {
     timestamps: true,

@@ -97,7 +97,7 @@ export default function TicketPassModal({ ticket, onClose }) {
             </div>
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
               <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Server-Verified Tamper-Proof Signature</span>
+              <span>Verified Digital Admission Pass</span>
             </div>
           </div>
 

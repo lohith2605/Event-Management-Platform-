@@ -35,7 +35,10 @@ export default function ProtectedRoute({ allowedRoles, children }) {
     if (role === 'organizer') {
       return <Navigate to="/organizer/dashboard" replace />;
     }
-    return <Navigate to="/attendee" replace />;
+    if (role === 'attendee') {
+      return <Navigate to="/attendee" replace />;
+    }
+    return <Navigate to="/" replace />;
   }
 
   return children;

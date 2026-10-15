@@ -971,7 +971,7 @@ export default function AttendeeDashboard() {
                   My Verified Digital Passes
                 </h2>
                 <p className="text-xs text-[var(--color-secondary-text)]">
-                  Tamper-proof server-issued QR tickets ready for registration desk check-in
+                  Official digital QR tickets ready for registration desk check-in
                 </p>
               </div>
               <button
@@ -1496,11 +1496,11 @@ export default function AttendeeDashboard() {
                   </button>
                 </form>
 
-                {/* Role and Account Security Notice */}
+                {/* Account Role Notice */}
                 <div className="pt-2 border-t border-[var(--color-borders)] text-[11px] text-[var(--color-secondary-text)] flex items-start gap-2">
                   <Shield className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <span>
-                    Your role is verified as <strong>Attendee</strong>. Security policy strictly forbids self-escalation to organizer or administrator roles.
+                    Logged in as <strong>Attendee</strong>. Keep your account details up to date for smooth event entry.
                   </span>
                 </div>
               </div>
