@@ -1,7 +1,3 @@
-/**
- * UTSAV — Dedicated Admin Portal API Client
- * Strict authentication via HTTP-only cookie sessions and backend authorization.
- */
 
 const handleResponse = async (response) => {
   const data = await response.json().catch(() => ({}));

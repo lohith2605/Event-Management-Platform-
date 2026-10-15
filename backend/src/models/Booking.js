@@ -216,6 +216,50 @@ const BookingSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    reminder24hSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    reminder24hSentAt: {
+      type: Date,
+    },
+    reminder24hStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'sent', 'failed', 'skipped'],
+      default: 'pending',
+      index: true,
+    },
+    reminder24hError: {
+      type: String,
+      default: '',
+    },
+    reminder24hMessageId: {
+      type: String,
+      default: '',
+    },
+    reminder2hSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    reminder2hSentAt: {
+      type: Date,
+    },
+    reminder2hStatus: {
+      type: String,
+      enum: ['pending', 'processing', 'sent', 'failed', 'skipped'],
+      default: 'pending',
+      index: true,
+    },
+    reminder2hError: {
+      type: String,
+      default: '',
+    },
+    reminder2hMessageId: {
+      type: String,
+      default: '',
+    },
     transactionReference: {
       type: String,
       trim: true,
@@ -231,5 +275,7 @@ const BookingSchema = new mongoose.Schema(
 BookingSchema.index({ userId: 1, createdAt: -1 });
 BookingSchema.index({ eventId: 1, status: 1 });
 BookingSchema.index({ userId: 1, eventId: 1, status: 1 });
+BookingSchema.index({ eventId: 1, status: 1, reminder24hSent: 1 });
+BookingSchema.index({ eventId: 1, status: 1, reminder2hSent: 1 });
 
 export default mongoose.model('Booking', BookingSchema);

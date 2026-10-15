@@ -1,7 +1,3 @@
-/**
- * UTSAV — Authentication API Client
- * Uses HTTP-only cookie session handling with relative endpoints supported by Vite proxy
- */
 
 const handleResponse = async (response) => {
   const data = await response.json().catch(() => ({}));

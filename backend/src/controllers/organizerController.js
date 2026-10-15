@@ -3,6 +3,7 @@ import Event from '../models/Event.js';
 import Booking from '../models/Booking.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
+import { handleEventRescheduled } from '../services/reminderScheduler.js';
 
 /**
  * Helper to ensure the authenticated user owns the event, or is an admin.
@@ -506,6 +507,8 @@ export const updateOrganizerEvent = async (req, res, next) => {
       status: requestedStatus,
     } = req.body;
 
+    const previousIsoDate = event.isoDate ? new Date(event.isoDate) : null;
+
     if (title) event.title = title.trim();
     if (tagline !== undefined) event.tagline = tagline.trim();
     if (description !== undefined) event.description = description.trim();
@@ -565,6 +568,15 @@ export const updateOrganizerEvent = async (req, res, next) => {
     }
 
     await event.save();
+
+    // Check if event was rescheduled to a new future time
+    if (event.isoDate && previousIsoDate && event.isoDate.getTime() !== previousIsoDate.getTime()) {
+      try {
+        await handleEventRescheduled(event._id, event.isoDate, previousIsoDate);
+      } catch (rescheduleErr) {
+        console.warn('Failed to reset reminders for rescheduled event:', rescheduleErr.message);
+      }
+    }
 
     if (event.status === 'pending') {
       try {

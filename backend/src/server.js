@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import app from './app.js';
 import { connectDB } from './config/db.js';
 import logger from './utils/logger.js';
+import { startReminderScheduler, stopReminderScheduler } from './services/reminderScheduler.js';
 
 const PORT = process.env.PORT || 5000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
@@ -26,6 +27,9 @@ const startServer = async () => {
         dbHost: conn?.connection?.host || 'MongoDB Atlas',
         corsOrigin: CORS_ORIGIN,
       });
+
+      // 4. Start background automated event reminder scheduler (10-minute polling)
+      startReminderScheduler({ intervalMs: 10 * 60 * 1000 });
     });
 
     // Handle server startup errors
@@ -42,6 +46,7 @@ const startServer = async () => {
     // Clean graceful shutdown
     const gracefulShutdown = (signal) => {
       logger.warn(`Received ${signal}. Closing server and database connections...`);
+      stopReminderScheduler();
       server.close(async () => {
         try {
           if (mongoose.connection.readyState !== 0) {

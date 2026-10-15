@@ -404,7 +404,8 @@ export const sendBookingConfirmationEmail = async ({ booking, event, user, ticke
  * @param {string|mongoose.Types.ObjectId} bookingId
  * @returns {Promise<{ success: boolean, delivered?: boolean, skipped?: boolean, reason?: string, error?: string, messageId?: string }>}
  */
-export const sendConfirmationEmailForBooking = async (bookingId) => {
+export const sendConfirmationEmailForBooking = async (param) => {
+  const bookingId = typeof param === 'object' && param !== null && !param._bsontype ? (param.bookingId || param.id || param) : param;
   if (!bookingId) return { success: false, error: 'No booking ID provided' };
 
   try {
@@ -703,7 +704,8 @@ export const sendCancellationEmail = async ({ booking, event, user, tickets = []
  * @param {string|mongoose.Types.ObjectId} bookingId
  * @returns {Promise<{ success: boolean, delivered?: boolean, skipped?: boolean, reason?: string, error?: string, messageId?: string }>}
  */
-export const sendCancellationEmailForBooking = async (bookingId) => {
+export const sendCancellationEmailForBooking = async (param) => {
+  const bookingId = typeof param === 'object' && param !== null && !param._bsontype ? (param.bookingId || param.id || param) : param;
   if (!bookingId) return { success: false, error: 'No booking ID provided' };
 
   try {
@@ -781,6 +783,245 @@ export const sendCancellationEmailForBooking = async (bookingId) => {
   }
 };
 
+/**
+ * Send branded UTSAV Event Reminder Email (24h or 2h before event)
+ */
+export const sendEventReminderEmail = async ({
+  booking,
+  event,
+  user,
+  reminderType = '24h',
+  tickets = [],
+}) => {
+  const recipient = user?.email || booking.attendeeEmail;
+  const recipientName = user?.name || booking.attendeeName || 'Valued Attendee';
+  const eventTitle = event?.title || 'UTSAV Event';
+  const eventDate = event?.date || 'Upcoming';
+  const eventTime = event?.time || '';
+  const isOnline =
+    event?.format === 'Online' ||
+    event?.city === 'Online' ||
+    (event?.venue && event.venue.toLowerCase().includes('online'));
+  const eventLocation = isOnline
+    ? 'Online Event (Access link available in your UTSAV dashboard)'
+    : `${event?.venue || 'Venue TBD'}, ${event?.city || ''}`;
+
+  const is24h = reminderType === '24h';
+  const subject = is24h
+    ? `⏰ Reminder: "${eventTitle}" is happening tomorrow! [${booking.bookingReference}]`
+    : `🚨 Final Reminder: "${eventTitle}" starts in 2 hours! [${booking.bookingReference}]`;
+
+  const bannerBadge = is24h
+    ? '⏰ TOMORROW • 24-HOUR REMINDER'
+    : '🚨 STARTING SOON • 2-HOUR REMINDER';
+
+  const heading = is24h
+    ? `Get Ready! "${eventTitle}" is Tomorrow`
+    : `Starting in 2 Hours: "${eventTitle}"`;
+
+  const leadText = is24h
+    ? `Hello <strong>${recipientName}</strong>, this is your friendly 24-hour reminder that your upcoming registered experience <strong>${eventTitle}</strong> takes place tomorrow.`
+    : `Hello <strong>${recipientName}</strong>, your registered event <strong>${eventTitle}</strong> kicks off in just <strong>2 hours</strong>! Gates and check-in desks are opening.`;
+
+  const tipsText = is24h
+    ? `Plan your arrival: We recommend arriving at least 15 minutes before ${eventTime}. Make sure your phone is charged to display your digital pass.`
+    : `Direct Check-in: Have your mobile screen brightness turned up high. Gate stewards will scan your verified dynamic QR pass for immediate admission.`;
+
+  const myTicketsUrl = `${process.env.CORS_ORIGIN || 'http://localhost:5173'}/attendee/tickets`;
+
+  const ticketListText =
+    tickets.length > 0
+      ? tickets.map((t) => `${t.ticketCode} (${t.ticketType || 'GA'} - Seat: ${t.seatNumber || 'GA'})`).join('\n')
+      : `${booking.bookingReference} (${booking.quantity}x ${booking.ticketType})`;
+
+  const text = `Hello ${recipientName},\n\n${is24h ? 'Your event takes place tomorrow!' : 'Your event starts in 2 hours!'}\n\nEvent: ${eventTitle}\nDate & Time: ${eventDate} • ${eventTime}\nVenue: ${eventLocation}\nBooking Reference: ${booking.bookingReference}\nTickets: ${booking.quantity}x ${booking.ticketType}\n\nIssued Passes:\n${ticketListText}\n\n${tipsText}\n\nYou can access your verified digital tickets and interactive QR passes anytime in your UTSAV dashboard:\n${myTicketsUrl}\n\nSee you there!\nThe UTSAV Platform Team`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>UTSAV Event Reminder</title>
+      <style>
+        body { margin: 0; padding: 0; background-color: #FAF8F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #292722; }
+        .wrapper { width: 100%; table-layout: fixed; background-color: #FAF8F5; padding: 40px 16px; }
+        .main-card { max-width: 600px; margin: 0 auto; background-color: #FFFFFF; border: 1px solid #E7E2DA; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+        .header { background: linear-gradient(135deg, #D96342 0%, #B84728 100%); padding: 32px 24px; text-align: center; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 26px; font-weight: 800; letter-spacing: 0.5px; }
+        .header p { margin: 6px 0 0; color: rgba(255, 255, 255, 0.9); font-size: 13px; font-weight: 500; }
+        .content { padding: 32px 28px; }
+        .badge { display: inline-block; background-color: #FFF7ED; color: #C2410C; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 9999px; border: 1px solid #FFEDD5; margin-bottom: 12px; letter-spacing: 0.5px; }
+        .title { margin: 0 0 8px; font-size: 22px; font-weight: 800; color: #1C1917; }
+        .lead { margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #57534E; }
+        .event-card { background-color: #FAF8F5; border: 1px solid #E7E2DA; border-radius: 14px; padding: 20px; margin: 20px 0; }
+        .event-title { font-size: 18px; font-weight: 800; color: #1C1917; margin: 0 0 12px; }
+        .meta-row { margin-bottom: 8px; font-size: 13px; color: #57534E; }
+        .meta-label { font-weight: 700; color: #1C1917; display: inline-block; min-width: 120px; }
+        .tips-box { background-color: #FFF8F5; border: 1px solid #F3D5CC; border-radius: 12px; padding: 16px; margin: 24px 0; font-size: 12px; line-height: 1.6; color: #8C3E26; }
+        .btn-container { text-align: center; margin: 28px 0; }
+        .btn { display: inline-block; background-color: #D96342; color: #FFFFFF !important; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(217, 99, 66, 0.25); }
+        .footer { padding: 24px 28px; background-color: #FAF8F5; border-top: 1px solid #E7E2DA; text-align: center; font-size: 11px; color: #A8A29E; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="main-card">
+          <div class="header">
+            <h1>UTSAV</h1>
+            <p>Smart Event Management Platform</p>
+          </div>
+          <div class="content">
+            <div class="badge">${bannerBadge}</div>
+            <h2 class="title">${heading}</h2>
+            <p class="lead">${leadText}</p>
+
+            <div class="event-card">
+              <div class="event-title">${eventTitle}</div>
+              <div class="meta-row">
+                <span class="meta-label">📅 Date & Time:</span>
+                <span><strong>${eventDate}</strong> • ${eventTime}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">📍 Venue:</span>
+                <span>${eventLocation}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-label">🎟️ Booking Ref:</span>
+                <span style="font-family:monospace;font-weight:700;">${booking.bookingReference}</span>
+              </div>
+              <div class="meta-row" style="margin-bottom:0;">
+                <span class="meta-label">🏷️ Passes:</span>
+                <span>${booking.quantity}x ${booking.ticketType || 'General Admission'}</span>
+              </div>
+            </div>
+
+            <div class="tips-box">
+              💡 <strong>Admission & Entry Advice:</strong><br/>
+              ${tipsText}
+            </div>
+
+            <div class="btn-container">
+              <a href="${myTicketsUrl}" class="btn" target="_blank" rel="noopener noreferrer">
+                Access Digital Passes in My Tickets
+              </a>
+            </div>
+          </div>
+          <div class="footer">
+            <p style="margin:0 0 6px;">Questions about this event? Contact support at <strong>${fromEmail}</strong>.</p>
+            <p style="margin:0;">&copy; 2026 UTSAV Platform. India's Curated Event Discovery & Ticketing Platform.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendEmail({
+    to: recipient,
+    subject,
+    text,
+    html,
+  });
+};
+
+/**
+ * Safely triggers an event reminder email with atomic concurrency lock
+ * @param {Object} params
+ * @param {string|mongoose.Types.ObjectId} params.bookingId
+ * @param {'24h'|'2h'} params.reminderType
+ * @returns {Promise<{ success: boolean, delivered?: boolean, skipped?: boolean, reason?: string, error?: string, messageId?: string }>}
+ */
+export const sendReminderEmailForBooking = async (arg1, arg2 = '24h') => {
+  const isObj = typeof arg1 === 'object' && arg1 !== null && !arg1._bsontype;
+  const bookingId = isObj ? (arg1.bookingId || arg1.id) : arg1;
+  const reminderType = (isObj ? arg1.reminderType : arg2) || '24h';
+
+  if (!bookingId) return { success: false, error: 'No booking ID provided' };
+
+  const is24h = reminderType === '24h';
+  const queryField = is24h ? 'reminder24hSent' : 'reminder2hSent';
+  const statusField = is24h ? 'reminder24hStatus' : 'reminder2hStatus';
+  const sentAtField = is24h ? 'reminder24hSentAt' : 'reminder2hSentAt';
+  const msgIdField = is24h ? 'reminder24hMessageId' : 'reminder2hMessageId';
+  const errorField = is24h ? 'reminder24hError' : 'reminder2hError';
+
+  try {
+    const existing = await Booking.findById(bookingId).populate('eventId');
+    if (!existing) {
+      return { success: false, error: 'Booking not found' };
+    }
+
+    if (existing.status !== 'confirmed') {
+      return { success: true, skipped: true, reason: 'booking_not_confirmed' };
+    }
+
+    if (existing[queryField] === true) {
+      return { success: true, skipped: true, reason: 'already_sent' };
+    }
+
+    // Atomic concurrency lock
+    const claimed = await Booking.findOneAndUpdate(
+      {
+        _id: bookingId,
+        status: 'confirmed',
+        [queryField]: { $ne: true },
+        [statusField]: { $ne: 'processing' },
+      },
+      {
+        $set: { [statusField]: 'processing' },
+      },
+      { new: true }
+    ).populate('eventId');
+
+    if (!claimed) {
+      return { success: true, skipped: true, reason: 'concurrency_lock' };
+    }
+
+    const [user, tickets] = await Promise.all([
+      User.findById(claimed.userId),
+      Ticket.find({ bookingId: claimed._id, status: { $ne: 'cancelled' } }),
+    ]);
+
+    const attendeeRecord = user || {
+      name: claimed.attendeeName,
+      email: claimed.attendeeEmail,
+    };
+
+    const emailResult = await sendEventReminderEmail({
+      booking: claimed,
+      event: claimed.eventId,
+      user: attendeeRecord,
+      reminderType,
+      tickets,
+    });
+
+    claimed[queryField] = true;
+    claimed[sentAtField] = new Date();
+    claimed[statusField] = 'sent';
+    claimed[msgIdField] =
+      emailResult?.messageId || (emailResult?.simulated ? 'SIMULATED' : 'DELIVERED');
+    claimed[errorField] = '';
+    await claimed.save();
+
+    console.log(`✅ [${reminderType} Reminder Email] Dispatched for ${claimed.bookingReference} to ${attendeeRecord.email}`);
+    return { success: true, delivered: !!emailResult?.delivered, messageId: claimed[msgIdField] };
+  } catch (err) {
+    console.error(`⚠️ [${reminderType} Reminder Error] Booking ${bookingId}:`, err.message);
+    try {
+      await Booking.findByIdAndUpdate(bookingId, {
+        $set: {
+          [statusField]: 'failed',
+          [errorField]: err.message,
+        },
+      });
+    } catch (saveErr) {
+      // ignore
+    }
+    return { success: false, error: err.message };
+  }
+};
+
 export default {
   sendEmail,
   sendPasswordResetEmail,
@@ -788,6 +1029,8 @@ export default {
   sendConfirmationEmailForBooking,
   sendCancellationEmail,
   sendCancellationEmailForBooking,
+  sendEventReminderEmail,
+  sendReminderEmailForBooking,
   getTransporter,
   setTransporter,
 };

@@ -2,10 +2,7 @@ import Razorpay from 'razorpay';
 
 let razorpayInstance = null;
 
-/**
- * Returns a configured singleton Razorpay instance using backend environment variables.
- * Returns null if credentials are not configured.
- */
+
 export const getRazorpayInstance = () => {
   const key_id = process.env.RAZORPAY_KEY_ID;
   const key_secret = process.env.RAZORPAY_KEY_SECRET;

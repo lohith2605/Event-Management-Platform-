@@ -18,6 +18,7 @@ import {
   getAdminNotifications,
   markAdminNotificationRead,
   markAllAdminNotificationsRead,
+  triggerRemindersCheck,
 } from '../controllers/adminController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
@@ -58,5 +59,8 @@ router.get('/audit-logs', getAdminAuditLogs);
 router.get('/notifications', getAdminNotifications);
 router.put('/notifications/:id/read', markAdminNotificationRead);
 router.put('/notifications/read-all', markAllAdminNotificationsRead);
+
+// Automated Event Reminders Trigger
+router.post('/reminders/trigger', triggerRemindersCheck);
 
 export default router;

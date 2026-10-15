@@ -8,6 +8,7 @@ import Notification from '../models/Notification.js';
 import AuditLog from '../models/AuditLog.js';
 import { sendCancellationEmailForBooking } from '../services/emailService.js';
 import { processRazorpayRefund, fetchRazorpayRefund } from '../services/refundService.js';
+import { processEventReminders } from '../services/reminderScheduler.js';
 
 /**
  * Helper to record administrative audit log
@@ -1512,6 +1513,39 @@ export const markAllAdminNotificationsRead = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'All notifications marked as read.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Manually trigger automated event reminders check
+ * @route   POST /api/admin/reminders/trigger
+ * @access  Private (Admin only)
+ */
+export const triggerRemindersCheck = async (req, res, next) => {
+  try {
+    const { referenceTime } = req.body;
+    const stats = await processEventReminders({
+      referenceTime: referenceTime ? new Date(referenceTime) : undefined,
+    });
+
+    await recordAuditLog({
+      req,
+      action: 'TRIGGER_REMINDERS',
+      targetType: 'system',
+      targetId: null,
+      targetTitle: 'Automated Event Reminders',
+      details: `Admin triggered event reminder check. Stats: 24h: ${stats.sent24h}, 2h: ${stats.sent2h}, checked: ${stats.checkedEvents}`,
+      reason: 'Manual scheduler invocation',
+      metadata: stats,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Event reminder processing completed successfully.',
+      stats,
     });
   } catch (error) {
     next(error);
