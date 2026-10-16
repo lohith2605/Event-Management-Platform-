@@ -46,7 +46,46 @@ export default function AdminDashboard() {
   // Active tab synchronized with URL (?tab=...)
   const tabParam = searchParams.get('tab') || 'overview';
   const [activeTab, setActiveTab] = useState(tabParam);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Desktop sidebar collapsed state - persisted across tab switches and refreshes
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem('utsav_admin_sidebar_open');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Toggle handler for both desktop and mobile
+  const handleToggleSidebar = useCallback(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      setMobileDrawerOpen((prev) => !prev);
+    } else {
+      setSidebarOpen((prev) => {
+        const next = !prev;
+        try {
+          localStorage.setItem('utsav_admin_sidebar_open', String(next));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    }
+  }, []);
+
+  // Keyboard shortcut Ctrl+B or Cmd+B to toggle sidebar
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        handleToggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleSidebar]);
 
   // Success Feedback Toast
   const [toastMessage, setToastMessage] = useState('');
@@ -153,7 +192,7 @@ export default function AdminDashboard() {
   // Synchronize Tab with searchParams
   const handleTabChange = useCallback((tabId, extraParams = {}) => {
     setActiveTab(tabId);
-    setMobileMenuOpen(false);
+    setMobileDrawerOpen(false);
     startTransition(() => {
       setSearchParams({ tab: tabId, ...extraParams }, { replace: true });
     });
@@ -593,24 +632,28 @@ export default function AdminDashboard() {
         onLogout={handleLogout}
         unreadCount={unreadNotifsCount}
         onOpenNotifications={() => setNotificationsModalOpen(true)}
-        mobileMenuOpen={mobileMenuOpen}
-        setMobileMenuOpen={setMobileMenuOpen}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={handleToggleSidebar}
+        mobileMenuOpen={mobileDrawerOpen}
+        setMobileMenuOpen={setMobileDrawerOpen}
       />
 
-      {/* Main Workspace */}
-      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          {/* Responsive Sidebar */}
+      {/* Main Workspace - Expanded horizontal layout up to 1720px */}
+      <div className="flex-1 w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-6 sm:py-8 transition-all">
+        <div className="flex flex-col lg:flex-row items-start w-full transition-all">
+          {/* Responsive Collapsible Sidebar */}
           <AdminSidebar
             activeTab={activeTab}
             onTabChange={handleTabChange}
             badges={sidebarBadges}
-            mobileMenuOpen={mobileMenuOpen}
-            setMobileMenuOpen={setMobileMenuOpen}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={handleToggleSidebar}
+            mobileDrawerOpen={mobileDrawerOpen}
+            setMobileDrawerOpen={setMobileDrawerOpen}
           />
 
-          {/* Tab Content Display */}
-          <main className="flex-1 min-w-0 w-full">
+          {/* Tab Content Display - Automatically Expands to Full Available Width */}
+          <main className="flex-1 min-w-0 w-full transition-all duration-300">
             {activeTab === 'overview' && (
               <AdminOverviewTab
                 stats={stats}

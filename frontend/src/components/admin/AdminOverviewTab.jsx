@@ -95,54 +95,157 @@ export default function AdminOverviewTab({
   return (
     <div className="space-y-6">
       {/* =========================================================================
-          A. PAGE HEADING AND CONTROLS
+          A. ADMINISTRATIVE MODULE SHORTCUTS & SYSTEM CONTROLS (TOP BAR)
           ========================================================================= */}
-      <div className="p-5 sm:p-6 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
+      <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl p-5 shadow-xs space-y-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-[var(--color-borders)]/60">
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl sm:text-2xl font-black font-serif tracking-tight text-[var(--color-main-text)]">
-              Platform Overview
-            </h1>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Live System</span>
-            </span>
+            <div className="w-7 h-7 rounded-lg bg-[var(--color-golden-accent)]/15 border border-[var(--color-golden-accent)]/30 flex items-center justify-center text-[var(--color-golden-accent)] shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-[var(--color-main-text)]">
+                  Administrative Module Shortcuts
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Live System</span>
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--color-secondary-text)]">
+                Direct navigation across governance domains
+              </p>
+            </div>
           </div>
-          <p className="text-xs sm:text-sm text-[var(--color-secondary-text)] mt-1">
-            Real-time platform metrics, governance queues, financial health, and system activity.
-          </p>
+
+          {/* Action Controls */}
+          <div className="flex items-center flex-wrap gap-2 shrink-0">
+            {stats?.timestamp && (
+              <span className="text-[11px] text-[var(--color-secondary-text)] hidden sm:inline-flex items-center gap-1 font-mono">
+                <Clock className="w-3 h-3" />
+                <span>Synced {new Date(stats.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border border-[var(--color-borders)] bg-[var(--color-secondary-bg)]/60 text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer shadow-2xs"
+              title="Refresh metrics from database"
+            >
+              <RefreshCw className="w-3 h-3" />
+              <span>Refresh</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => onNavigateTab('events', { status: 'pending' })}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shadow-2xs ${
+                pendingCount > 0
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs animate-pulse'
+                  : 'bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-white shadow-xs'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Moderation Queue ({pendingCount})</span>
+            </button>
+          </div>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center flex-wrap gap-2.5 shrink-0">
-          {stats?.timestamp && (
-            <span className="text-[11px] text-[var(--color-secondary-text)] hidden sm:inline-flex items-center gap-1 font-mono">
-              <Clock className="w-3.5 h-3.5" />
-              <span>Synced {new Date(stats.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={onRefresh}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border border-[var(--color-borders)] bg-[var(--color-secondary-bg)]/60 text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
-            title="Refresh metrics from database"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
-          </button>
-
+        {/* 6 Shortcut Module Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-0.5">
+          {/* 1. Event Moderation */}
           <button
             type="button"
             onClick={() => onNavigateTab('events', { status: 'pending' })}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-              pendingCount > 0
-                ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs animate-pulse'
-                : 'bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-white shadow-xs'
-            }`}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
           >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Moderation Queue ({pendingCount})</span>
+            <div className="flex items-center justify-between mb-1.5">
+              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform" />
+              {pendingCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Moderation</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Review events</div>
+          </button>
+
+          {/* 2. User Governance */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('users')}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <Users className="w-4 h-4 text-[var(--color-primary-action)] group-hover:scale-110 transition-transform" />
+              {userStats.suspendedUsers > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-red-500 text-white">
+                  {userStats.suspendedUsers}
+                </span>
+              )}
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Users</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Roles & status</div>
+          </button>
+
+          {/* 3. Bookings & Payments */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('bookings')}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Bookings</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Reconciliation</div>
+          </button>
+
+          {/* 4. Reviews & Feedback */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('reviews')}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <MessageSquareQuote className="w-4 h-4 text-[var(--color-golden-accent)] group-hover:scale-110 transition-transform" />
+              {reviewStats.flaggedReviews > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white">
+                  {reviewStats.flaggedReviews}
+                </span>
+              )}
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Reviews</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Community rating</div>
+          </button>
+
+          {/* 5. Coupons & Discounts */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('coupons')}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <Tag className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Coupons</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Promo codes</div>
+          </button>
+
+          {/* 6. Audit Trail */}
+          <button
+            type="button"
+            onClick={() => onNavigateTab('audit-logs')}
+            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer hover:border-[var(--color-primary-action)]/40 shadow-2xs"
+          >
+            <div className="flex items-center justify-between mb-1.5">
+              <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform" />
+            </div>
+            <div className="font-bold text-xs text-[var(--color-main-text)]">Audit Trail</div>
+            <div className="text-[10px] text-[var(--color-secondary-text)]">Security logs</div>
           </button>
         </div>
       </div>
@@ -785,115 +888,7 @@ export default function AdminOverviewTab({
         </div>
       </div>
 
-      {/* =========================================================================
-          G. QUICK ADMINISTRATIVE ACTIONS
-          ========================================================================= */}
-      <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl p-5 shadow-xs space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-extrabold uppercase tracking-wider text-[var(--color-secondary-text)] flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5 text-[var(--color-golden-accent)]" />
-            <span>Administrative Module Shortcuts</span>
-          </span>
-          <span className="text-[11px] text-[var(--color-secondary-text)]">
-            Direct navigation across governance domains
-          </span>
-        </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-1">
-          {/* 1. Event Moderation */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('events', { status: 'pending' })}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform" />
-              {pendingCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white">
-                  {pendingCount}
-                </span>
-              )}
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Moderation</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Review events</div>
-          </button>
-
-          {/* 2. User Governance */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('users')}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <Users className="w-4 h-4 text-[var(--color-primary-action)] group-hover:scale-110 transition-transform" />
-              {userStats.suspendedUsers > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-red-500 text-white">
-                  {userStats.suspendedUsers}
-                </span>
-              )}
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Users</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Roles & status</div>
-          </button>
-
-          {/* 3. Bookings & Payments */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('bookings')}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Bookings</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Reconciliation</div>
-          </button>
-
-          {/* 4. Reviews & Feedback */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('reviews')}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <MessageSquareQuote className="w-4 h-4 text-[var(--color-golden-accent)] group-hover:scale-110 transition-transform" />
-              {reviewStats.flaggedReviews > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white">
-                  {reviewStats.flaggedReviews}
-                </span>
-              )}
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Reviews</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Community rating</div>
-          </button>
-
-          {/* 5. Coupons & Discounts */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('coupons')}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <Tag className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Coupons</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Promo codes</div>
-          </button>
-
-          {/* 6. Audit Trail */}
-          <button
-            type="button"
-            onClick={() => onNavigateTab('audit-logs')}
-            className="p-3 rounded-xl bg-[var(--color-secondary-bg)]/40 hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-left transition-all group cursor-pointer"
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <FileText className="w-4 h-4 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform" />
-            </div>
-            <div className="font-bold text-xs text-[var(--color-main-text)]">Audit Trail</div>
-            <div className="text-[10px] text-[var(--color-secondary-text)]">Security logs</div>
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

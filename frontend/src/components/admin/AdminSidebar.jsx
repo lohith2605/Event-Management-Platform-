@@ -8,6 +8,8 @@ import {
   Bell,
   Sparkles,
   Tag,
+  ChevronLeft,
+  X,
 } from 'lucide-react';
 import ThemeSwitcher from '../ThemeSwitcher';
 
@@ -26,17 +28,44 @@ export default function AdminSidebar({
   activeTab,
   onTabChange,
   badges = {},
+  sidebarOpen = true,
+  onToggleSidebar,
+  mobileDrawerOpen,
+  setMobileDrawerOpen,
   mobileMenuOpen,
   setMobileMenuOpen,
 }) {
+  const isMobileOpen = mobileDrawerOpen ?? mobileMenuOpen ?? false;
+  const setIsMobileOpen = setMobileDrawerOpen ?? setMobileMenuOpen ?? (() => {});
+
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:block w-64 shrink-0">
-        <div className="sticky top-28 space-y-6">
+      {/* Desktop Collapsible Sidebar */}
+      <aside
+        className={`hidden lg:block shrink-0 transition-all duration-300 ease-in-out ${
+          sidebarOpen
+            ? 'w-64 mr-6 lg:mr-8 opacity-100 translate-x-0'
+            : 'w-0 mr-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden'
+        }`}
+        aria-hidden={!sidebarOpen}
+      >
+        <div className="w-64 sticky top-28 space-y-6">
           <nav className="p-3 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl shadow-xs space-y-1">
-            <div className="px-3 py-2 text-[10px] font-extrabold uppercase tracking-widest text-[var(--color-secondary-text)]">
-              Governance Modules
+            <div className="flex items-center justify-between px-3 py-2">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest text-[var(--color-secondary-text)]">
+                Governance Modules
+              </span>
+              {onToggleSidebar && (
+                <button
+                  type="button"
+                  onClick={onToggleSidebar}
+                  className="p-1 rounded-lg text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
+                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {ADMIN_NAV_ITEMS.map((item) => {
@@ -81,16 +110,16 @@ export default function AdminSidebar({
       </aside>
 
       {/* Mobile Drawer Navigation */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
+      {isMobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-50 flex" role="dialog" aria-modal="true" aria-label="Admin Navigation Drawer">
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
-            onClick={() => setMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in"
+            onClick={() => setIsMobileOpen(false)}
           />
 
           {/* Drawer content */}
-          <div className="relative w-72 max-w-[85vw] bg-[var(--color-card-bg)] h-full p-5 shadow-2xl flex flex-col justify-between overflow-y-auto border-r border-[var(--color-borders)]">
+          <div className="relative w-72 max-w-[85vw] bg-[var(--color-card-bg)] h-full p-5 shadow-2xl flex flex-col justify-between overflow-y-auto border-r border-[var(--color-borders)] animate-fade-in">
             <div className="space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-[var(--color-borders)]">
                 <span className="font-serif font-black text-lg text-[var(--color-main-text)]">
@@ -98,10 +127,11 @@ export default function AdminSidebar({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="p-1 rounded-lg text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] cursor-pointer"
+                  onClick={() => setIsMobileOpen(false)}
+                  className="p-1.5 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] cursor-pointer transition-colors"
+                  aria-label="Close navigation drawer"
                 >
-                  ✕
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
@@ -122,7 +152,7 @@ export default function AdminSidebar({
                       type="button"
                       onClick={() => {
                         onTabChange(item.id);
-                        setMobileMenuOpen(false);
+                        setIsMobileOpen(false);
                       }}
                       className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                         isActive
@@ -140,6 +170,8 @@ export default function AdminSidebar({
                           className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                             isActive
                               ? 'bg-white/20 text-white'
+                              : item.id === 'events'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                               : 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]'
                           }`}
                         >

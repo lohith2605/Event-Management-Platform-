@@ -17,22 +17,34 @@ export default function AdminHeader({
   onLogout,
   unreadCount = 0,
   onOpenNotifications,
+  sidebarOpen = true,
+  onToggleSidebar,
   mobileMenuOpen,
   setMobileMenuOpen,
 }) {
+  const handleToggle = onToggleSidebar || (() => {
+    if (setMobileMenuOpen) setMobileMenuOpen(!mobileMenuOpen);
+  });
+
   return (
     <header className="sticky top-0 z-40 bg-[var(--color-card-bg)]/90 backdrop-blur-md border-b border-[var(--color-borders)] transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
-          {/* Left: Mobile Toggle & Brand Identity */}
-          <div className="flex items-center gap-3 sm:gap-4">
+          {/* Left: Hamburger Sidebar Toggle & Brand Identity */}
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
             <button
               type="button"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer"
-              aria-label="Toggle navigation menu"
+              onClick={handleToggle}
+              className={`p-2 sm:p-2.5 rounded-xl border border-[var(--color-borders)] transition-all cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--color-primary-action)] active:scale-95 shadow-2xs ${
+                sidebarOpen
+                  ? 'bg-[var(--color-secondary-bg)] text-[var(--color-main-text)]'
+                  : 'bg-[var(--color-card-bg)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
+              }`}
+              aria-label={sidebarOpen ? "Collapse governance navigation sidebar" : "Expand governance navigation sidebar"}
+              title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+              aria-expanded={sidebarOpen}
             >
-              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              <Menu className="w-5 h-5 transition-transform duration-200" />
             </button>
 
             <Link to="/admin" className="flex items-center gap-3 group">
