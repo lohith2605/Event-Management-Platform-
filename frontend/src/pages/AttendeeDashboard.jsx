@@ -4,17 +4,12 @@ import { motion } from 'motion/react';
 import {
   User,
   Calendar,
-  LogOut,
   Ticket,
   Sparkles,
   ArrowRight,
   ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
   Bell,
   Star,
-  Settings,
-  Compass,
   CheckCircle2,
   MapPin,
   RefreshCw,
@@ -22,11 +17,11 @@ import {
   AlertCircle,
   Shield,
   KeyRound,
-  Users,
   X,
   CreditCard,
   Clock,
   Loader2,
+  Flame,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import EventCard from '../components/EventCard';
@@ -35,6 +30,7 @@ import TicketPassModal from '../components/TicketPassModal';
 import BookingDetailsModal from '../components/BookingDetailsModal';
 import ReviewModal from '../components/ReviewModal';
 import FeaturedCarousel from '../components/FeaturedCarousel';
+import Footer from '../components/Footer';
 import {
   fetchAttendeeStatsApi,
   fetchMyBookingsApi,
@@ -55,7 +51,7 @@ import { fetchPublishedEventsApi } from '../api/events';
 import { EVENT_CATEGORIES, CITIES, FORMAT_OPTIONS } from '../config/taxonomy';
 
 export default function AttendeeDashboard() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -87,14 +83,6 @@ export default function AttendeeDashboard() {
     }
   };
 
-  // Helper for scrolling horizontal carousels smoothly
-  const scrollHorizontal = (elementId, offset) => {
-    const el = document.getElementById(elementId);
-    if (el) {
-      el.scrollBy({ left: offset, behavior: 'smooth' });
-    }
-  };
-
   // ---------------- STATE ----------------
   // Stats & Overview
   const [stats, setStats] = useState({
@@ -109,11 +97,32 @@ export default function AttendeeDashboard() {
   // Discover Events
   const [discoverEvents, setDiscoverEvents] = useState([]);
   const [discoverLoading, setDiscoverLoading] = useState(false);
-  const discoverSearch = searchParams.get('q') || '';
+  const discoverSearch = searchParams.get('q') || searchParams.get('search') || '';
   const [discoverCategory, setDiscoverCategory] = useState('All');
-  const [discoverCity, setDiscoverCity] = useState('All Cities');
+  const [discoverCity, setDiscoverCity] = useState(searchParams.get('city') || 'All Cities');
   const [discoverFormat, setDiscoverFormat] = useState('All Formats');
   const [discoverPrice, setDiscoverPrice] = useState('all');
+  const [discoverDate, setDiscoverDate] = useState('all');
+  const [discoverSort, setDiscoverSort] = useState('soonest');
+  const [discoverPage, setDiscoverPage] = useState(1);
+  const [discoverTotalPages, setDiscoverTotalPages] = useState(1);
+  const [discoverTotalCount, setDiscoverTotalCount] = useState(0);
+
+  // All published events for curated collections & dynamic city discovery
+  const [allPublishedForCollections, setAllPublishedForCollections] = useState([]);
+
+  // Synchronize inline search input with URL search param
+  const [searchInput, setSearchInput] = useState(discoverSearch);
+
+  useEffect(() => {
+    setSearchInput(discoverSearch);
+  }, [discoverSearch]);
+
+  // Synchronize discoverCity with URL search param (e.g. from navbar city selector)
+  useEffect(() => {
+    const urlCity = searchParams.get('city') || 'All Cities';
+    setDiscoverCity(urlCity);
+  }, [searchParams]);
 
   // Bookings
   const [bookings, setBookings] = useState([]);
@@ -159,14 +168,20 @@ export default function AttendeeDashboard() {
   const [activeReviewEvent, setActiveReviewEvent] = useState(null);
 
   // ---------------- LOADERS ----------------
-  // 1. Overview & Stats
+  // 1. Overview & Stats & Active Tickets
   const loadOverviewStats = useCallback(async () => {
     setLoadingOverview(true);
     try {
-      const res = await fetchAttendeeStatsApi();
+      const [res, tRes] = await Promise.all([
+        fetchAttendeeStatsApi(),
+        fetchMyTicketsApi('all').catch(() => null),
+      ]);
       if (res && res.success) {
         setStats(res.stats);
         setUpcomingBookings(res.upcomingBookings || []);
+      }
+      if (tRes && Array.isArray(tRes.tickets)) {
+        setTickets(tRes.tickets);
       }
     } catch (err) {
       console.error('Failed to load attendee overview stats:', err);
@@ -175,29 +190,50 @@ export default function AttendeeDashboard() {
     }
   }, []);
 
-  // 2. Discover Events
-  const loadDiscoverEvents = useCallback(async () => {
-    setDiscoverLoading(true);
+  // 2. Discover Events (Primary catalog querying backend)
+  const loadDiscoverEvents = useCallback(
+    async (targetPage = 1) => {
+      setDiscoverLoading(true);
+      try {
+        const res = await fetchPublishedEventsApi({
+          search: discoverSearch.trim() || undefined,
+          category: discoverCategory !== 'All' ? discoverCategory : undefined,
+          city: discoverCity !== 'All Cities' ? discoverCity : undefined,
+          format: discoverFormat !== 'All Formats' ? discoverFormat : undefined,
+          pricing: discoverPrice !== 'all' ? discoverPrice : undefined,
+          date: discoverDate !== 'all' ? discoverDate : undefined,
+          sort: discoverSort !== 'soonest' ? discoverSort : undefined,
+          page: targetPage,
+          limit: 12,
+        });
+        if (res && Array.isArray(res.events)) {
+          setDiscoverEvents(res.events);
+          setDiscoverPage(res.page || targetPage);
+          setDiscoverTotalPages(res.pages || 1);
+          setDiscoverTotalCount(res.total !== undefined ? res.total : res.events.length);
+        }
+      } catch (err) {
+        console.error('Failed to load discover events:', err);
+      } finally {
+        setDiscoverLoading(false);
+      }
+    },
+    [discoverSearch, discoverCategory, discoverCity, discoverFormat, discoverPrice, discoverDate, discoverSort]
+  );
+
+  // 3. Load events for curated collections
+  const loadAllPublishedForCollections = useCallback(async () => {
     try {
-      const res = await fetchPublishedEventsApi({
-        search: discoverSearch.trim() || undefined,
-        category: discoverCategory !== 'All' ? discoverCategory : undefined,
-        city: discoverCity !== 'All Cities' ? discoverCity : undefined,
-        format: discoverFormat !== 'All Formats' ? discoverFormat : undefined,
-        pricing: discoverPrice !== 'all' ? discoverPrice : undefined,
-        limit: 20,
-      });
+      const res = await fetchPublishedEventsApi({ limit: 30, sort: 'soonest' });
       if (res && Array.isArray(res.events)) {
-        setDiscoverEvents(res.events);
+        setAllPublishedForCollections(res.events);
       }
     } catch (err) {
-      console.error('Failed to load discover events:', err);
-    } finally {
-      setDiscoverLoading(false);
+      console.warn('Could not load events for collections:', err.message);
     }
-  }, [discoverSearch, discoverCategory, discoverCity, discoverFormat, discoverPrice]);
+  }, []);
 
-  // 3. Bookings
+  // 4. Bookings
   const loadBookings = useCallback(async () => {
     setBookingsLoading(true);
     try {
@@ -212,7 +248,7 @@ export default function AttendeeDashboard() {
     }
   }, [bookingFilter]);
 
-  // 4. Tickets
+  // 5. Tickets
   const loadTickets = useCallback(async () => {
     setTicketsLoading(true);
     try {
@@ -227,7 +263,7 @@ export default function AttendeeDashboard() {
     }
   }, []);
 
-  // 5. Notifications
+  // 6. Notifications
   const loadNotifications = useCallback(async () => {
     setNotificationsLoading(true);
     try {
@@ -243,7 +279,7 @@ export default function AttendeeDashboard() {
     }
   }, []);
 
-  // 6. Reviews
+  // 7. Reviews
   const loadReviews = useCallback(async () => {
     setReviewsLoading(true);
     try {
@@ -258,7 +294,7 @@ export default function AttendeeDashboard() {
     }
   }, []);
 
-  // 7. Profile
+  // 8. Profile
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
     try {
@@ -279,32 +315,153 @@ export default function AttendeeDashboard() {
     }
   }, []);
 
-  // Curated Featured Highlights from real published events
-  const featuredList = useMemo(() => {
-    const explicitlyFeatured = discoverEvents.filter((e) => e.featured);
-    if (explicitlyFeatured.length > 0) return explicitlyFeatured;
-    return discoverEvents.slice(0, 4);
-  }, [discoverEvents]);
+  // Dynamic Cities list (merges taxonomy with any active event cities)
+  const availableCities = useMemo(() => {
+    const citySet = new Set(CITIES);
+    allPublishedForCollections.forEach((e) => {
+      if (e.city && e.city.trim()) citySet.add(e.city.trim());
+    });
+    return Array.from(citySet);
+  }, [allPublishedForCollections]);
 
-  // Trending & Fast-filling Events from real published events
-  const trendingList = useMemo(() => {
-    const popular = discoverEvents.filter(
-      (e) => e.seatsBooked > 0 || (e.spotsLeft !== undefined && e.spotsLeft < 80)
-    );
-    if (popular.length > 0) return popular;
-    return discoverEvents.slice(1, 5);
-  }, [discoverEvents]);
+  // Curated Collections Calculation with STRICT Deduplication against Featured Event & each other
+  const featuredEventId = useMemo(() => {
+    const feat = allPublishedForCollections.find((e) => e.isFeatured);
+    return feat ? feat._id : allPublishedForCollections[0]?._id;
+  }, [allPublishedForCollections]);
 
-  // Load initial data
-  useEffect(() => {
-    loadOverviewStats();
-  }, [loadOverviewStats]);
+  // 1. Weekend Events
+  const weekendEvents = useMemo(() => {
+    const now = new Date();
+    const currentDay = now.getDay();
+    const daysToFriday = (5 - currentDay + 7) % 7;
+    const weekendStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (currentDay === 6 ? -1 : currentDay === 0 ? -2 : daysToFriday), 0, 0, 0);
+    const daysToSunday = (7 - currentDay) % 7;
+    const weekendEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday, 23, 59, 59, 999);
 
-  // Tab change trigger
+    return allPublishedForCollections.filter((evt) => {
+      if (evt._id === featuredEventId) return false;
+      const d = evt.isoDate ? new Date(evt.isoDate) : null;
+      return d && d >= weekendStart && d <= weekendEnd;
+    });
+  }, [allPublishedForCollections, featuredEventId]);
+
+  // 2. Near You Events
+  const nearYouCity = discoverCity !== 'All Cities' ? discoverCity : (profile?.city || user?.city || null);
+  const nearYouEvents = useMemo(() => {
+    if (!nearYouCity || nearYouCity === 'All Cities') return [];
+    const usedIds = new Set([featuredEventId, ...weekendEvents.map((e) => e._id)]);
+    return allPublishedForCollections.filter((evt) => {
+      if (usedIds.has(evt._id)) return false;
+      return evt.city && evt.city.toLowerCase() === nearYouCity.toLowerCase();
+    });
+  }, [allPublishedForCollections, featuredEventId, weekendEvents, nearYouCity]);
+
+  // 3. Popular & High-Demand Events
+  const popularEvents = useMemo(() => {
+    const usedIds = new Set([
+      featuredEventId,
+      ...weekendEvents.map((e) => e._id),
+      ...nearYouEvents.map((e) => e._id),
+    ]);
+    return allPublishedForCollections.filter((evt) => {
+      if (usedIds.has(evt._id)) return false;
+      return (
+        (evt.spotsLeft !== undefined && evt.spotsLeft < 60 && evt.spotsLeft > 0) ||
+        (evt.totalCapacity && evt.spotsLeft !== undefined && (evt.totalCapacity - evt.spotsLeft) / evt.totalCapacity > 0.4)
+      );
+    });
+  }, [allPublishedForCollections, featuredEventId, weekendEvents, nearYouEvents]);
+
+  // 4. Newly Added Events
+  const newlyAddedEvents = useMemo(() => {
+    const usedIds = new Set([
+      featuredEventId,
+      ...weekendEvents.map((e) => e._id),
+      ...nearYouEvents.map((e) => e._id),
+      ...popularEvents.map((e) => e._id),
+    ]);
+    return allPublishedForCollections
+      .filter((evt) => !usedIds.has(evt._id))
+      .slice(0, 4);
+  }, [allPublishedForCollections, featuredEventId, weekendEvents, nearYouEvents, popularEvents]);
+
+  // Active filter checks
+  const hasActiveFilters = Boolean(
+    discoverSearch ||
+    discoverCategory !== 'All' ||
+    discoverCity !== 'All Cities' ||
+    discoverDate !== 'all' ||
+    discoverFormat !== 'All Formats' ||
+    discoverPrice !== 'all' ||
+    discoverSort !== 'soonest'
+  );
+
+  // City change handler
+  const handleCityChange = (newCity) => {
+    setDiscoverCity(newCity);
+    setDiscoverPage(1);
+    const nextParams = new URLSearchParams(searchParams);
+    if (newCity && newCity !== 'All Cities') {
+      nextParams.set('city', newCity);
+    } else {
+      nextParams.delete('city');
+    }
+    setSearchParams(nextParams);
+  };
+
+  // Search & Filter handlers
+  const handleInlineSearchSubmit = (e) => {
+    e.preventDefault();
+    const nextParams = new URLSearchParams(searchParams);
+    if (searchInput.trim()) {
+      nextParams.set('q', searchInput.trim());
+    } else {
+      nextParams.delete('q');
+      nextParams.delete('search');
+    }
+    setSearchParams(nextParams);
+    setDiscoverPage(1);
+  };
+
+  const handleClearInlineSearch = () => {
+    setSearchInput('');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('q');
+    nextParams.delete('search');
+    setSearchParams(nextParams);
+    setDiscoverPage(1);
+  };
+
+  const handleResetFilters = () => {
+    setSearchInput('');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('q');
+    nextParams.delete('search');
+    nextParams.delete('city');
+    setSearchParams(nextParams);
+    setDiscoverCategory('All');
+    setDiscoverCity('All Cities');
+    setDiscoverDate('all');
+    setDiscoverFormat('All Formats');
+    setDiscoverPrice('all');
+    setDiscoverSort('soonest');
+    setDiscoverPage(1);
+  };
+
+  const handlePageChange = (newPage) => {
+    if (newPage >= 1 && newPage <= discoverTotalPages && newPage !== discoverPage) {
+      loadDiscoverEvents(newPage);
+      const el = document.getElementById('utsav-event-catalog');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  // Tab change trigger: load initial tab data when navigating between tabs
   useEffect(() => {
     if (activeTab === 'discovery') {
-      loadDiscoverEvents();
       loadOverviewStats();
+      loadAllPublishedForCollections();
     }
     if (activeTab === 'bookings') loadBookings();
     if (activeTab === 'tickets') loadTickets();
@@ -316,13 +473,30 @@ export default function AttendeeDashboard() {
     if (activeTab === 'profile') loadProfile();
   }, [
     activeTab,
-    loadDiscoverEvents,
     loadOverviewStats,
+    loadAllPublishedForCollections,
     loadBookings,
     loadTickets,
     loadNotifications,
     loadReviews,
     loadProfile,
+  ]);
+
+  // Discover Events query: triggers when search query or discovery filters change
+  useEffect(() => {
+    if (activeTab === 'discovery') {
+      loadDiscoverEvents(1);
+    }
+  }, [
+    activeTab,
+    discoverSearch,
+    discoverCategory,
+    discoverCity,
+    discoverFormat,
+    discoverPrice,
+    discoverDate,
+    discoverSort,
+    loadDiscoverEvents,
   ]);
 
   // Notification actions
@@ -522,14 +696,9 @@ export default function AttendeeDashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login', { replace: true });
-  };
-
   return (
     <div className="min-h-screen bg-[var(--color-primary-bg)] text-[var(--color-main-text)] py-6 sm:py-8 px-4 sm:px-6 lg:px-8 transition-colors">
-      <div className="max-w-6xl mx-auto space-y-8">
+      <div className="max-w-7xl mx-auto space-y-8">
         {/* ================= CANONICAL DISCOVERY HOMEPAGE (/attendee & /attendee/events) ================= */}
         {activeTab === 'discovery' && (
           <motion.div
@@ -537,40 +706,39 @@ export default function AttendeeDashboard() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
           >
-            {/* 1. Featured Promotional Banner Carousel */}
-            <FeaturedCarousel
-              onSelectEvent={(evt) => setActiveBookingEvent(evt)}
-              onExploreMore={() => {
-                const el = document.getElementById('utsav-event-catalog');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-            />
 
-            {/* 2. Category Navigation Chips */}
-            <div className="space-y-3">
+
+            {/* ================= SECTION 3: EXPLORE BY CATEGORY ================= */}
+            <div className="space-y-2.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[var(--color-primary-action)]" />
-                  <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
+                  <span className="font-extrabold text-xs uppercase tracking-wider text-[var(--color-secondary-text)]">
                     Explore by Category
-                  </h3>
+                  </span>
                 </div>
                 {discoverCategory !== 'All' && (
                   <button
                     type="button"
-                    onClick={() => setDiscoverCategory('All')}
-                    className="text-xs font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer"
+                    onClick={() => {
+                      setDiscoverCategory('All');
+                      setDiscoverPage(1);
+                    }}
+                    className="text-[11px] font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer"
                   >
                     Reset to All Categories
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none snap-x">
                 <button
                   type="button"
-                  onClick={() => setDiscoverCategory('All')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                  onClick={() => {
+                    setDiscoverCategory('All');
+                    setDiscoverPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 snap-start ${
                     discoverCategory === 'All'
                       ? 'bg-[var(--color-primary-action)] text-[var(--color-primary-text)] shadow-xs scale-102'
                       : 'bg-[var(--color-card-bg)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)]'
@@ -584,8 +752,11 @@ export default function AttendeeDashboard() {
                     <button
                       key={catName}
                       type="button"
-                      onClick={() => setDiscoverCategory(catName)}
-                      className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      onClick={() => {
+                        setDiscoverCategory(catName);
+                        setDiscoverPage(1);
+                      }}
+                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0 snap-start ${
                         isSelected
                           ? 'bg-[var(--color-primary-action)] text-[var(--color-primary-text)] shadow-xs scale-102'
                           : 'bg-[var(--color-card-bg)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)]'
@@ -598,225 +769,261 @@ export default function AttendeeDashboard() {
               </div>
             </div>
 
-            {/* 4. Horizontally Browsable Section: Attendee's Confirmed Passes (if any) */}
-            {upcomingBookings.length > 0 && (
-              <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl p-5 sm:p-6 space-y-4 shadow-xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                      <Ticket className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
-                        Your Upcoming Events & Passes
-                      </h3>
-                      <p className="text-[11px] text-[var(--color-secondary-text)]">
-                        Confirmed reservations ready with verified digital QR admission
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => navigateToTab('bookings')}
-                    className="text-xs font-bold text-[var(--color-primary-action)] hover:underline inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>View All ({stats.totalBookings})</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+            {/* ================= SECTION 4: ONE COMPACT FEATURED-EVENT BANNER (Hidden during search) ================= */}
+            {!discoverSearch && (
+              <FeaturedCarousel
+                onSelectEvent={(evt) => setActiveBookingEvent(evt)}
+                onExploreMore={() => {
+                  const el = document.getElementById('utsav-event-catalog');
+                  if (el) el.scrollIntoView({ behavior: 'smooth' });
+                }}
+                onViewEvent={(evt) => setActiveBookingEvent(evt)}
+              />
+            )}
 
-                <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin snap-x">
-                  {upcomingBookings.map((b) => {
-                    const evt = b.eventId || {};
-                    return (
-                      <div
-                        key={b._id}
-                        className="min-w-[280px] max-w-[320px] shrink-0 snap-start bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] rounded-2xl p-4 flex flex-col justify-between space-y-3"
-                      >
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono text-[10px] font-bold text-[var(--color-primary-action)]">
-                              {b.bookingReference}
-                            </span>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                              Confirmed
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-sm text-[var(--color-main-text)] line-clamp-1">
-                            {evt.title}
-                          </h4>
-                          <p className="text-xs text-[var(--color-secondary-text)] flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
-                            <span>{evt.date} • {evt.time}</span>
+            {/* ================= SECTION 5: CURATED EVENT COLLECTIONS (Hidden during search) ================= */}
+            {/* Populated strictly from genuine event data; empty collections are omitted; zero repetitive duplicates */}
+            {!discoverSearch && (weekendEvents.length > 0 || nearYouEvents.length > 0 || popularEvents.length > 0 || newlyAddedEvents.length > 0) && (
+              <div className="space-y-8 pt-1">
+                {/* 1. Happening This Weekend */}
+                {weekendEvents.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)] flex items-center justify-center shrink-0">
+                          <Calendar className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                            Happening This Weekend
+                          </h3>
+                          <p className="text-[11px] text-[var(--color-secondary-text)]">
+                            Upcoming campus gatherings and stage shows scheduled for this Saturday and Sunday
                           </p>
                         </div>
-                        <div className="flex items-center justify-between pt-2 border-t border-[var(--color-borders)]">
-                          <button
-                            type="button"
-                            onClick={() => setActiveBookingReceipt(b)}
-                            className="text-xs font-bold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] cursor-pointer"
-                          >
-                            Receipt
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigateToTab('tickets')}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-bold text-xs shadow-xs cursor-pointer"
-                          >
-                            <Sparkles className="w-3 h-3" />
-                            <span>View Pass (QR)</span>
-                          </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverDate('this-weekend');
+                          setDiscoverPage(1);
+                          const el = document.getElementById('utsav-event-catalog');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="text-xs font-bold text-[var(--color-primary-action)] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <span>View Weekend Events</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                      {weekendEvents.slice(0, 4).map((evt) => (
+                        <EventCard
+                          key={`weekend-${evt._id || evt.id}`}
+                          event={evt}
+                          onBook={(e) => setActiveBookingEvent(e)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* 2. Near You / In Selected City */}
+                {nearYouEvents.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                          <MapPin className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                            Events in {nearYouCity}
+                          </h3>
+                          <p className="text-[11px] text-[var(--color-secondary-text)]">
+                            Verified experiences and campus gatherings taking place in your selected region
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* 5. Horizontally Browsable Section: Curated & Featured Highlights */}
-            {featuredList.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[var(--color-golden-accent)]" />
-                    <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
-                      Curated & Featured Highlights
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => scrollHorizontal('featured-scroll', -320)}
-                      className="p-1.5 rounded-lg bg-[var(--color-card-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)] text-[var(--color-main-text)] cursor-pointer"
-                      aria-label="Scroll featured events left"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => scrollHorizontal('featured-scroll', 320)}
-                      className="p-1.5 rounded-lg bg-[var(--color-card-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)] text-[var(--color-main-text)] cursor-pointer"
-                      aria-label="Scroll featured events right"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div
-                  id="featured-scroll"
-                  className="flex gap-5 overflow-x-auto pb-4 scrollbar-thin snap-x scroll-smooth"
-                >
-                  {featuredList.map((evt) => (
-                    <div
-                      key={evt._id || evt.id}
-                      className="min-w-[290px] sm:min-w-[330px] max-w-[340px] shrink-0 snap-start"
-                    >
-                      <EventCard event={evt} onBook={(e) => setActiveBookingEvent(e)} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverCity(nearYouCity);
+                          setDiscoverPage(1);
+                          const el = document.getElementById('utsav-event-catalog');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="text-xs font-bold text-[var(--color-primary-action)] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <span>View All in {nearYouCity}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 6. Horizontally Browsable Section: Trending & Fast-Filling */}
-            {trendingList.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Users className="w-4 h-4 text-purple-500" />
-                    <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
-                      Trending & Fast-Filling
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => scrollHorizontal('trending-scroll', -320)}
-                      className="p-1.5 rounded-lg bg-[var(--color-card-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)] text-[var(--color-main-text)] cursor-pointer"
-                      aria-label="Scroll trending events left"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => scrollHorizontal('trending-scroll', 320)}
-                      className="p-1.5 rounded-lg bg-[var(--color-card-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-secondary-bg)] text-[var(--color-main-text)] cursor-pointer"
-                      aria-label="Scroll trending events right"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                <div
-                  id="trending-scroll"
-                  className="flex gap-5 overflow-x-auto pb-4 scrollbar-thin snap-x scroll-smooth"
-                >
-                  {trendingList.map((evt) => (
-                    <div
-                      key={evt._id || evt.id}
-                      className="min-w-[290px] sm:min-w-[330px] max-w-[340px] shrink-0 snap-start"
-                    >
-                      <EventCard event={evt} onBook={(e) => setActiveBookingEvent(e)} />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                      {nearYouEvents.slice(0, 4).map((evt) => (
+                        <EventCard
+                          key={`near-${evt._id || evt.id}`}
+                          event={evt}
+                          onBook={(e) => setActiveBookingEvent(e)}
+                        />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </section>
+                )}
+
+                {/* 3. Popular & High-Demand Stages */}
+                {popularEvents.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                          <Flame className="w-4 h-4 animate-pulse" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                            Selling Fast • Popular Showcases
+                          </h3>
+                          <p className="text-[11px] text-[var(--color-secondary-text)]">
+                            High-demand stages and workshops with limited confirmed capacity remaining
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverSort('popular');
+                          setDiscoverPage(1);
+                          const el = document.getElementById('utsav-event-catalog');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="text-xs font-bold text-[var(--color-primary-action)] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <span>Sort by Demand</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                      {popularEvents.slice(0, 4).map((evt) => (
+                        <EventCard
+                          key={`pop-${evt._id || evt.id}`}
+                          event={evt}
+                          onBook={(e) => setActiveBookingEvent(e)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
+
+                {/* 4. Newly Added Experiences */}
+                {newlyAddedEvents.length > 0 && (
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)] flex items-center justify-center shrink-0">
+                          <Sparkles className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                            Newly Added Experiences
+                          </h3>
+                          <p className="text-[11px] text-[var(--color-secondary-text)]">
+                            Recently published campus festivals, hackathons, and gatherings open for registration
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverSort('newest');
+                          setDiscoverPage(1);
+                          const el = document.getElementById('utsav-event-catalog');
+                          if (el) el.scrollIntoView({ behavior: 'smooth' });
+                        }}
+                        className="text-xs font-bold text-[var(--color-primary-action)] hover:underline flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <span>View Newest</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                      {newlyAddedEvents.slice(0, 4).map((evt) => (
+                        <EventCard
+                          key={`new-${evt._id || evt.id}`}
+                          event={evt}
+                          onBook={(e) => setActiveBookingEvent(e)}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                )}
               </div>
             )}
 
-            {/* 7. Full Event Listings with Filters (City, Format, Price, Refresh) */}
-            <div id="utsav-event-catalog" className="space-y-5 pt-4">
+            {/* ================= SECTION 6: ALL PUBLISHED EVENTS (PRIMARY DISCOVERY AREA) ================= */}
+            <div id="utsav-event-catalog" className="space-y-4 pt-2">
+              {/* Header with Title and Result Counts */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-xl font-extrabold font-serif text-[var(--color-main-text)]">
-                      {discoverSearch ? `Search Results for "${discoverSearch}"` : 'All Published Events'}
-                    </h3>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <h2 className="text-xl sm:text-2xl font-extrabold font-serif text-[var(--color-main-text)]">
+                      {discoverSearch
+                        ? `Search Results for "${discoverSearch}"`
+                        : discoverCategory !== 'All'
+                        ? `${discoverCategory} Experiences`
+                        : discoverCity !== 'All Cities'
+                        ? `Events in ${discoverCity}`
+                        : 'All Published Events'}
+                    </h2>
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)] border border-[var(--color-primary-action)]/20">
+                      {discoverTotalCount || discoverEvents.length} Event{discoverTotalCount !== 1 ? 's' : ''} {discoverSearch ? 'Found' : 'Available'}
+                    </span>
                     {discoverSearch && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]">
-                        <span>&ldquo;{discoverSearch}&rdquo;</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const nextParams = new URLSearchParams(searchParams);
-                            nextParams.delete('q');
-                            setSearchParams(nextParams);
-                          }}
-                          className="hover:text-red-500 transition-colors cursor-pointer p-0.5"
-                          title="Clear search filter"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearInlineSearch}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold bg-[var(--color-secondary-bg)] hover:bg-red-500/10 text-[var(--color-secondary-text)] hover:text-red-500 border border-[var(--color-borders)] hover:border-red-500/30 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Clear Search</span>
+                      </button>
                     )}
                   </div>
-                  <p className="text-xs text-[var(--color-secondary-text)]">
+                  <p className="text-xs text-[var(--color-secondary-text)] mt-0.5">
                     {discoverSearch
-                      ? `Showing live events matching "${discoverSearch}" across India`
-                      : 'Explore live gatherings across India with real-time pass availability'}
+                      ? `Showing verified gatherings matching "${discoverSearch}" across India`
+                      : 'Compare passes, schedules, formats, and live seat availability with direct checkout'}
                   </p>
                 </div>
 
                 {/* Filter Controls Row */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  {/* City Selector */}
+                  {/* Date Filter */}
                   <select
-                    value={discoverCity}
-                    onChange={(e) => setDiscoverCity(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                    value={discoverDate}
+                    onChange={(e) => {
+                      setDiscoverDate(e.target.value);
+                      setDiscoverPage(1);
+                    }}
+                    aria-label="Filter by Date"
+                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden cursor-pointer"
                   >
-                    {CITIES.map((city) => (
-                      <option key={city} value={city}>
-                        {city}
-                      </option>
-                    ))}
+                    <option value="all">📅 All Dates</option>
+                    <option value="today">Today</option>
+                    <option value="this-weekend">This Weekend</option>
+                    <option value="this-week">This Week</option>
+                    <option value="this-month">This Month</option>
+                    <option value="upcoming">Upcoming Only</option>
                   </select>
 
                   {/* Format Selector */}
                   <select
                     value={discoverFormat}
-                    onChange={(e) => setDiscoverFormat(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                    onChange={(e) => {
+                      setDiscoverFormat(e.target.value);
+                      setDiscoverPage(1);
+                    }}
+                    aria-label="Filter by Format"
+                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden cursor-pointer"
                   >
                     {FORMAT_OPTIONS.map((fmt) => (
                       <option key={fmt} value={fmt}>
@@ -828,49 +1035,177 @@ export default function AttendeeDashboard() {
                   {/* Price Selector */}
                   <select
                     value={discoverPrice}
-                    onChange={(e) => setDiscoverPrice(e.target.value)}
-                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                    onChange={(e) => {
+                      setDiscoverPrice(e.target.value);
+                      setDiscoverPage(1);
+                    }}
+                    aria-label="Filter by Price"
+                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden cursor-pointer"
                   >
                     <option value="all">All Pricing</option>
-                    <option value="free">Free Events</option>
-                    <option value="paid">Paid Events</option>
+                    <option value="free">Free Passes</option>
+                    <option value="paid">Paid Passes</option>
+                  </select>
+
+                  {/* Sort Selector */}
+                  <select
+                    value={discoverSort}
+                    onChange={(e) => {
+                      setDiscoverSort(e.target.value);
+                      setDiscoverPage(1);
+                    }}
+                    aria-label="Sort Events"
+                    className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden cursor-pointer"
+                  >
+                    <option value="soonest">📅 Soonest First</option>
+                    <option value="latest">📅 Furthest First</option>
+                    <option value="price-low">💳 Price: Low to High</option>
+                    <option value="price-high">💳 Price: High to Low</option>
+                    <option value="popular">🔥 Most Popular</option>
+                    <option value="newest">✨ Newly Added</option>
                   </select>
 
                   {/* Refresh Button */}
                   <button
                     type="button"
-                    onClick={loadDiscoverEvents}
+                    onClick={() => loadDiscoverEvents(discoverPage)}
                     className="p-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] transition-colors cursor-pointer"
                     title="Refresh Events"
+                    aria-label="Refresh Events"
                   >
-                    <RefreshCw className={`w-4 h-4 ${discoverLoading ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3.5 h-3.5 ${discoverLoading ? 'animate-spin' : ''}`} />
                   </button>
 
-                  {/* Active Filter Reset */}
-                  {(discoverSearch || discoverCategory !== 'All' || discoverCity !== 'All Cities' || discoverFormat !== 'All Formats' || discoverPrice !== 'all') && (
+                  {/* Reset All Filters Button */}
+                  {hasActiveFilters && (
                     <button
                       type="button"
-                      onClick={() => {
-                        const nextParams = new URLSearchParams(searchParams);
-                        nextParams.delete('q');
-                        setSearchParams(nextParams);
-                        setDiscoverCategory('All');
-                        setDiscoverCity('All Cities');
-                        setDiscoverFormat('All Formats');
-                        setDiscoverPrice('all');
-                      }}
+                      onClick={handleResetFilters}
                       className="text-xs font-bold text-red-500 hover:underline px-2 py-1 cursor-pointer"
                     >
-                      Reset Filters
+                      Reset All
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Events Grid */}
+              {/* Active Filter Indicators */}
+              {hasActiveFilters && (
+                <div className="flex items-center gap-2 flex-wrap pt-1 text-xs">
+                  <span className="text-[var(--color-secondary-text)] font-semibold text-[11px]">Active Filters:</span>
+                  {discoverSearch && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Query: &ldquo;{discoverSearch}&rdquo;</span>
+                      <button
+                        type="button"
+                        onClick={handleClearInlineSearch}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove search query filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverCity !== 'All Cities' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>City: {discoverCity}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCityChange('All Cities')}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove city filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverCategory !== 'All' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Category: {discoverCategory}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverCategory('All');
+                          setDiscoverPage(1);
+                        }}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove category filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverDate !== 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Date: {discoverDate}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverDate('all');
+                          setDiscoverPage(1);
+                        }}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove date filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverFormat !== 'All Formats' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Format: {discoverFormat}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverFormat('All Formats');
+                          setDiscoverPage(1);
+                        }}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove format filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverPrice !== 'all' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Pricing: {discoverPrice === 'free' ? 'Free Only' : 'Paid Only'}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverPrice('all');
+                          setDiscoverPage(1);
+                        }}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Remove pricing filter"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                  {discoverSort !== 'soonest' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-main-text)] text-[11px] font-medium">
+                      <span>Sort: {discoverSort}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDiscoverSort('soonest');
+                          setDiscoverPage(1);
+                        }}
+                        className="text-[var(--color-secondary-text)] hover:text-red-500 cursor-pointer p-0.5"
+                        aria-label="Reset sorting to default"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Events Grid (4-column on desktop, 3-column on tablet, 2-column on small, 1-column on mobile) */}
               {discoverLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
                     <div
                       key={n}
                       className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl p-4 space-y-3 animate-pulse"
@@ -882,39 +1217,231 @@ export default function AttendeeDashboard() {
                   ))}
                 </div>
               ) : discoverEvents.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {discoverEvents.map((evt) => (
-                    <EventCard
-                      key={evt._id || evt.id}
-                      event={evt}
-                      onBook={(e) => setActiveBookingEvent(e)}
-                    />
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                    {discoverEvents.map((evt) => (
+                      <EventCard
+                        key={evt._id || evt.id}
+                        event={evt}
+                        onBook={(e) => setActiveBookingEvent(e)}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {discoverTotalPages > 1 && (
+                    <div className="flex items-center justify-between pt-4 border-t border-[var(--color-borders)]/60 text-xs">
+                      <div className="text-[var(--color-secondary-text)] font-medium">
+                        Page <span className="font-bold text-[var(--color-main-text)]">{discoverPage}</span> of{' '}
+                        <span className="font-bold text-[var(--color-main-text)]">{discoverTotalPages}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={discoverPage <= 1 || discoverLoading}
+                          onClick={() => handlePageChange(discoverPage - 1)}
+                          className="px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-main-text)] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Previous
+                        </button>
+                        <div className="hidden sm:flex items-center gap-1">
+                          {Array.from({ length: discoverTotalPages }, (_, i) => i + 1)
+                            .filter(
+                              (p) =>
+                                p === 1 ||
+                                p === discoverTotalPages ||
+                                Math.abs(p - discoverPage) <= 1
+                            )
+                            .map((p, idx, arr) => {
+                              const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                              return (
+                                <div key={p} className="flex items-center gap-1">
+                                  {showEllipsisBefore && (
+                                    <span className="px-1 text-[var(--color-secondary-text)]">...</span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePageChange(p)}
+                                    className={`w-8 h-8 rounded-xl font-bold transition-colors cursor-pointer ${
+                                      p === discoverPage
+                                        ? 'bg-[var(--color-primary-action)] text-[var(--color-primary-text)] shadow-xs'
+                                        : 'bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] text-[var(--color-main-text)] border border-[var(--color-borders)]'
+                                    }`}
+                                  >
+                                    {p}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={discoverPage >= discoverTotalPages || discoverLoading}
+                          onClick={() => handlePageChange(discoverPage + 1)}
+                          className="px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-main-text)] font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="p-12 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl text-center space-y-3">
-                  <AlertCircle className="w-10 h-10 text-[var(--color-secondary-text)] mx-auto" />
-                  <h4 className="font-bold text-base">No Matching Events Found</h4>
-                  <p className="text-xs text-[var(--color-secondary-text)] max-w-sm mx-auto">
-                    Try adjusting your search criteria or resetting filters to discover more events.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextParams = new URLSearchParams(searchParams);
-                      nextParams.delete('q');
-                      setSearchParams(nextParams);
-                      setDiscoverCategory('All');
-                      setDiscoverCity('All Cities');
-                      setDiscoverFormat('All Formats');
-                      setDiscoverPrice('all');
-                    }}
-                    className="px-4 py-2 rounded-xl bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-bold text-xs cursor-pointer"
-                  >
-                    Reset Filters
-                  </button>
+                <div className="p-12 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl text-center space-y-4 shadow-xs">
+                  <div className="w-14 h-14 rounded-2xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-secondary-text)] flex items-center justify-center mx-auto">
+                    <Search className="w-7 h-7 opacity-60" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-lg text-[var(--color-main-text)] font-serif">
+                      {discoverSearch ? `No events found matching "${discoverSearch}"` : 'No Matching Events Found'}
+                    </h4>
+                    <p className="text-xs sm:text-sm text-[var(--color-secondary-text)] max-w-md mx-auto">
+                      {discoverSearch
+                        ? 'Check your spelling or try searching for broader keywords like "tech", "concert", "fest", or another city.'
+                        : 'Try adjusting your filters, selecting another category, or clearing active filters.'}
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 pt-1 flex-wrap">
+                    {discoverSearch && (
+                      <button
+                        type="button"
+                        onClick={handleClearInlineSearch}
+                        className="px-4 py-2 rounded-xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-[var(--color-primary-text)] font-bold text-xs transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Clear Search</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleResetFilters}
+                      className="px-4 py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] text-[var(--color-main-text)] border border-[var(--color-borders)] font-bold text-xs transition-colors cursor-pointer"
+                    >
+                      Reset All Filters
+                    </button>
+                  </div>
                 </div>
               )}
+            </div>
+
+            {/* ================= SECTION 7: YOUR UPCOMING EVENTS & PASSES ================= */}
+            {/* Positioned near the bottom of dashboard; compact preview for authenticated attendees */}
+            <section className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl p-5 sm:p-6 space-y-4 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-[var(--color-borders)]/60">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                    <Ticket className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-extrabold text-base font-serif text-[var(--color-main-text)]">
+                        Your Upcoming Passes & Reservations
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        {upcomingBookings.length} Active
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-[var(--color-secondary-text)]">
+                      Instant check-in ready with verified dynamic QR code admission passes
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('tickets')}
+                    className="text-xs font-bold text-[var(--color-primary-action)] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>All Tickets</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[var(--color-borders)]">•</span>
+                  <button
+                    type="button"
+                    onClick={() => navigateToTab('bookings')}
+                    className="text-xs font-bold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>All Orders ({stats.totalBookings})</span>
+                  </button>
+                </div>
+              </div>
+
+              {upcomingBookings.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {upcomingBookings.map((b) => {
+                    const evt = b.eventId || {};
+                    return (
+                      <div
+                        key={b._id}
+                        className="bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] rounded-xl p-4 flex flex-col justify-between space-y-3 hover:border-[var(--color-primary-action)]/50 transition-colors shadow-2xs"
+                      >
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[10px] font-bold text-[var(--color-primary-action)]">
+                              {b.bookingReference}
+                            </span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                              Confirmed
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-sm text-[var(--color-main-text)] line-clamp-1">
+                            {evt.title || 'Event Booking'}
+                          </h4>
+                          <p className="text-xs text-[var(--color-secondary-text)] flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-[var(--color-primary-action)] shrink-0" />
+                            <span className="truncate">{evt.date || 'Upcoming'} • {evt.time || ''}</span>
+                          </p>
+                          {evt.venue && (
+                            <p className="text-[11px] text-[var(--color-secondary-text)] flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-[var(--color-golden-accent)] shrink-0" />
+                              <span className="truncate">{evt.venue}</span>
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pt-2 border-t border-[var(--color-borders)]/70">
+                          <button
+                            type="button"
+                            onClick={() => setActiveBookingReceipt(b)}
+                            className="text-xs font-bold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] cursor-pointer"
+                          >
+                            Receipt
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const matched = tickets.find((t) => t.bookingId === b._id || t.eventId?._id === evt._id);
+                              if (matched) {
+                                setActiveTicketPass(matched);
+                              } else {
+                                navigateToTab('tickets');
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[var(--color-primary-action)] text-[var(--color-primary-text)] font-bold text-xs shadow-xs hover:bg-[var(--color-primary-action-hover)] transition-colors cursor-pointer"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>View Pass (QR)</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-6 text-center bg-[var(--color-secondary-bg)]/60 rounded-xl border border-dashed border-[var(--color-borders)] space-y-2">
+                  <Ticket className="w-6 h-6 text-[var(--color-secondary-text)] mx-auto opacity-70" />
+                  <p className="text-xs text-[var(--color-secondary-text)]">
+                    You don't have any upcoming event passes right now. Discover and book an experience above!
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* ================= SECTION 8: PLATFORM FOOTER ================= */}
+            <div className="pt-6 border-t border-[var(--color-borders)]/70">
+              <Footer />
             </div>
           </motion.div>
         )}

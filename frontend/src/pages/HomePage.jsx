@@ -441,7 +441,7 @@ export default function HomePage() {
 
           {/* Loading Skeleton */}
           {loading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 pt-4">
               {[1, 2, 3, 4].map((n) => (
                 <div
                   key={n}
@@ -525,7 +525,7 @@ export default function HomePage() {
               variants={staggerContainer(0.08)}
               initial="hidden"
               animate="visible"
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+              className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5"
             >
               {filteredEvents.map((event) => (
                 <motion.div

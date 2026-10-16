@@ -4,7 +4,7 @@ import { Calendar, MapPin, Ticket, Users, Globe, Video } from 'lucide-react';
 const DEFAULT_EVENT_IMAGE =
   'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
 
-export default function EventCard({ event, onBook }) {
+export default function EventCard({ event, onBook, className = '' }) {
   const isFree = event.priceNumber === 0;
 
   return (
@@ -12,7 +12,7 @@ export default function EventCard({ event, onBook }) {
       layout
       whileHover={{ y: -6, transition: { duration: 0.22, ease: 'easeOut' } }}
       whileTap={{ scale: 0.98 }}
-      className="group bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl overflow-hidden flex flex-col hover:border-[var(--color-primary-action)]/70 hover:shadow-xl transition-colors duration-300 h-full"
+      className={`group bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl overflow-hidden flex flex-col hover:border-[var(--color-primary-action)]/70 hover:shadow-xl transition-colors duration-300 h-full w-full max-w-[300px] ${className}`}
     >
       {/* Event Image & Badges */}
       <div className="relative aspect-[16/10] overflow-hidden bg-[var(--color-secondary-bg)]">
@@ -28,7 +28,7 @@ export default function EventCard({ event, onBook }) {
         />
 
         {/* Top Left: Category & Format Badge */}
-        <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
+        <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5 max-w-[calc(100%-85px)]">
           <span className="bg-[var(--color-badge-bg)]/95 backdrop-blur-xs px-2.5 py-1 rounded-lg text-[11px] font-bold text-[var(--color-main-text)] shadow-xs border border-[var(--color-borders)]/60">
             {event.category}
           </span>
@@ -59,16 +59,16 @@ export default function EventCard({ event, onBook }) {
       </div>
 
       {/* Card Content */}
-      <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
-        <div className="space-y-2">
+      <div className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
+        <div className="space-y-1.5">
           {/* Date & Time */}
           <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary-action)]">
-            <Calendar className="w-3.5 h-3.5" />
-            <span>{event.date} • {event.time}</span>
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{event.date} • {event.time}</span>
           </div>
 
           {/* Title */}
-          <h3 className="font-extrabold text-lg text-[var(--color-main-text)] line-clamp-2 leading-snug group-hover:text-[var(--color-primary-action)] transition-colors">
+          <h3 className="font-extrabold text-base text-[var(--color-main-text)] line-clamp-2 leading-snug group-hover:text-[var(--color-primary-action)] transition-colors">
             {event.title}
           </h3>
 
@@ -79,7 +79,7 @@ export default function EventCard({ event, onBook }) {
         </div>
 
         {/* Venue & Action Footer */}
-        <div className="pt-3 border-t border-[var(--color-borders)]/70 space-y-3">
+        <div className="pt-2.5 border-t border-[var(--color-borders)]/70 space-y-2.5">
           <div className="flex items-center gap-1.5 text-xs text-[var(--color-secondary-text)]">
             <MapPin className="w-3.5 h-3.5 text-[var(--color-golden-accent)] shrink-0" />
             <span className="truncate">{event.venue}</span>
@@ -90,7 +90,7 @@ export default function EventCard({ event, onBook }) {
               <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--color-secondary-text)]">
                 Pass Starting
               </span>
-              <span className="font-extrabold text-base text-[var(--color-main-text)]">
+              <span className="font-extrabold text-sm text-[var(--color-main-text)]">
                 {isFree ? 'Free' : event.price}
               </span>
             </div>
@@ -98,7 +98,7 @@ export default function EventCard({ event, onBook }) {
             <button
               type="button"
               onClick={() => onBook(event)}
-              className="px-4 py-2 bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-primary-action)] hover:border-[var(--color-primary-action)] hover:text-[var(--color-primary-text)] text-[var(--color-main-text)] font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-xs active:translate-y-0.5 cursor-pointer"
+              className="px-3.5 py-1.5 bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] hover:bg-[var(--color-primary-action)] hover:border-[var(--color-primary-action)] hover:text-[var(--color-primary-text)] text-[var(--color-main-text)] font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-xs active:translate-y-0.5 cursor-pointer"
             >
               <Ticket className="w-3.5 h-3.5" />
               <span>Book Pass</span>

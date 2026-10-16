@@ -13,8 +13,11 @@ import {
   Bell,
   Search,
   ShieldCheck,
+  MapPin,
+  ChevronDown,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
+import { CITIES } from '../config/taxonomy';
 import ThemeSwitcher from './ThemeSwitcher';
 import AttendeeMenuDrawer from './AttendeeMenuDrawer';
 import { useAuth } from '../context/AuthContext';
@@ -27,19 +30,43 @@ export default function Navbar() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  // Hide navbar search on pages that already have their own dedicated in-page search interface (Landing page & Explore Events)
-  const hideNavbarSearch = location.pathname === '/' || location.pathname === '/events';
   const { user, role, isAuthenticated, logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Search input state synchronized with ?q=... query param
-  const urlQuery = searchParams.get('q') || '';
+  // Search input state synchronized with ?q=... or ?search=... query param
+  const urlQuery = searchParams.get('q') || searchParams.get('search') || '';
   const [searchValue, setSearchValue] = useState(urlQuery);
 
   // Sync input value whenever URL query changes externally
   useEffect(() => {
     setSearchValue(urlQuery);
   }, [urlQuery]);
+
+  // Debounced search synchronization on live discovery pages (attendee and public events)
+  useEffect(() => {
+    const isDiscoveryPage =
+      location.pathname === '/attendee' ||
+      location.pathname === '/attendee/events' ||
+      location.pathname === '/events';
+
+    if (!isDiscoveryPage) return;
+
+    const currentParam = (searchParams.get('q') || searchParams.get('search') || '').trim();
+    if (searchValue.trim() === currentParam) return;
+
+    const timer = setTimeout(() => {
+      const nextParams = new URLSearchParams(searchParams);
+      if (searchValue.trim()) {
+        nextParams.set('q', searchValue.trim());
+      } else {
+        nextParams.delete('q');
+        nextParams.delete('search');
+      }
+      setSearchParams(nextParams, { replace: true });
+    }, 280);
+
+    return () => clearTimeout(timer);
+  }, [searchValue, location.pathname, searchParams, setSearchParams]);
 
   // Load unread notification count for attendee menu badge
   useEffect(() => {
@@ -119,28 +146,12 @@ export default function Navbar() {
     navigate('/login', { replace: true });
   };
 
-  // Live filter when typing on attendee discovery or public events catalog
+  // Immediate input change for smooth 60fps typing
   const handleSearchChange = (e) => {
-    const val = e.target.value;
-    setSearchValue(val);
-
-    const isDiscoveryPage =
-      location.pathname === '/attendee' ||
-      location.pathname === '/attendee/events' ||
-      location.pathname === '/events';
-
-    if (isDiscoveryPage) {
-      const nextParams = new URLSearchParams(searchParams);
-      if (val.trim()) {
-        nextParams.set('q', val);
-      } else {
-        nextParams.delete('q');
-      }
-      setSearchParams(nextParams, { replace: true });
-    }
+    setSearchValue(e.target.value);
   };
 
-  // Submit search query (press Enter or submit)
+  // Submit search query (press Enter or click submit)
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     const query = searchValue.trim();
@@ -155,10 +166,16 @@ export default function Navbar() {
         nextParams.set('q', query);
       } else {
         nextParams.delete('q');
+        nextParams.delete('search');
       }
       setSearchParams(nextParams, { replace: true });
+
+      const catalogEl = document.getElementById('utsav-event-catalog');
+      if (catalogEl) {
+        catalogEl.scrollIntoView({ behavior: 'smooth' });
+      }
     } else {
-      // From any other page (e.g. notifications, bookings, profile)
+      // From any other page (landing page, bookings, tickets, profile, etc.)
       const destination = isAuthenticated && role === 'attendee' ? '/attendee' : '/events';
       if (query) {
         navigate(`${destination}?q=${encodeURIComponent(query)}`);
@@ -166,15 +183,51 @@ export default function Navbar() {
         navigate(destination);
       }
     }
+    setMobileSearchOpen(false);
   };
 
   // Clear search input and URL param
   const handleClearSearch = () => {
     setSearchValue('');
-    if (searchParams.has('q')) {
+    const isDiscoveryPage =
+      location.pathname === '/attendee' ||
+      location.pathname === '/attendee/events' ||
+      location.pathname === '/events';
+
+    if (isDiscoveryPage) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('q');
+      nextParams.delete('search');
       setSearchParams(nextParams, { replace: true });
+    }
+  };
+
+  // City selection synchronized with URL query parameter
+  const selectedCity = searchParams.get('city') || 'All Cities';
+
+  const handleCitySelect = (e) => {
+    const newCity = e.target.value;
+    const isDiscoveryPage =
+      location.pathname === '/attendee' ||
+      location.pathname === '/attendee/events' ||
+      location.pathname === '/events' ||
+      location.pathname === '/';
+
+    if (isDiscoveryPage) {
+      const nextParams = new URLSearchParams(searchParams);
+      if (newCity && newCity !== 'All Cities') {
+        nextParams.set('city', newCity);
+      } else {
+        nextParams.delete('city');
+      }
+      setSearchParams(nextParams, { replace: true });
+    } else {
+      const destination = isAuthenticated && role === 'attendee' ? '/attendee' : '/events';
+      if (newCity && newCity !== 'All Cities') {
+        navigate(`${destination}?city=${encodeURIComponent(newCity)}`);
+      } else {
+        navigate(destination);
+      }
     }
   };
 
@@ -182,82 +235,101 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 bg-[var(--color-primary-bg)]/95 backdrop-blur-md border-b border-[var(--color-borders)] transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-20 gap-3 sm:gap-4 lg:gap-6">
-          {/* Brand Logo */}
-          <Link
-            to={getBrandLogoDestination()}
-            onClick={closeMenu}
-            className="flex items-center gap-3 group text-[var(--color-main-text)] focus-visible:outline-none shrink-0"
-            aria-label={`${BRAND.name} — ${BRAND.tagline}`}
-          >
-            {/* Celebratory Banner Mark in place of plain letter U */}
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--color-primary-action)] via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 group-hover:shadow-purple-500/30 transition-all shrink-0">
-              <svg
-                className="w-5 h-5 text-white drop-shadow-xs"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                {/* Celebratory Festival Banner Pennant */}
-                <path
-                  d="M4 3h16a1 1 0 0 1 1 1v16l-5-2.8L12 19l-4-1.8L4 20V4a1 1 0 0 1 1-1z"
-                  fill="currentColor"
-                  fillOpacity="0.22"
-                />
-                {/* Celebratory Central Star */}
-                <path
-                  d="M12 6.5l1.1 2.3 2.5.4-1.8 1.8.4 2.5L12 12.3l-2.2 1.2.4-2.5-1.8-1.8 2.5-.4L12 6.5z"
-                  fill="#fbbf24"
-                  stroke="#fbbf24"
-                  strokeWidth="0.8"
-                />
-              </svg>
-            </div>
-
-            <div className="flex flex-col justify-center">
-              <span className="font-extrabold text-2xl tracking-tight font-serif text-[var(--color-main-text)] leading-tight">
-                {BRAND.name}
-              </span>
-              <span className="text-[10px] sm:text-[11px] font-medium tracking-wide text-[var(--color-secondary-text)] leading-tight">
-                {BRAND.tagline}
-              </span>
-            </div>
-          </Link>
-
-          {/* Search Bar - Appropriate Length Suits in Navbar (Hidden on Landing & Explore Events Pages) */}
-          {!hideNavbarSearch && (
-            <form
-              onSubmit={handleSearchSubmit}
-              className="hidden sm:flex items-center flex-1 max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg mx-2 md:mx-4 relative"
-              role="search"
+          {/* Brand Logo & City Selector */}
+          <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
+            <Link
+              to={getBrandLogoDestination()}
+              onClick={closeMenu}
+              className="flex items-center gap-2.5 sm:gap-3 group text-[var(--color-main-text)] focus-visible:outline-none shrink-0"
+              aria-label={`${BRAND.name} — ${BRAND.tagline}`}
             >
-              <div className="relative w-full flex items-center">
-                <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchValue}
-                  onChange={handleSearchChange}
-                  placeholder="Search hackathons, music concerts, tech fests, venues..."
-                  aria-label="Search events"
-                  className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm rounded-full bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/30 border border-[var(--color-borders)] text-[var(--color-main-text)] placeholder:text-[var(--color-secondary-text)]/70 focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-2 focus:ring-[var(--color-primary-action)]/20 transition-all font-medium shadow-2xs"
-                />
-                {searchValue && (
-                  <button
-                    type="button"
-                    onClick={handleClearSearch}
-                    className="absolute right-2.5 p-1 rounded-full text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-borders)]/50 transition-colors cursor-pointer"
-                    title="Clear search"
-                    aria-label="Clear search input"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+              {/* Celebratory Banner Mark in place of plain letter U */}
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-[var(--color-primary-action)] via-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-purple-500/20 group-hover:scale-105 group-hover:shadow-purple-500/30 transition-all shrink-0">
+                <svg
+                  className="w-4 h-4 sm:w-5 sm:h-5 text-white drop-shadow-xs"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {/* Celebratory Festival Banner Pennant */}
+                  <path
+                    d="M4 3h16a1 1 0 0 1 1 1v16l-5-2.8L12 19l-4-1.8L4 20V4a1 1 0 0 1 1-1z"
+                    fill="currentColor"
+                    fillOpacity="0.22"
+                  />
+                  {/* Celebratory Central Star */}
+                  <path
+                    d="M12 6.5l1.1 2.3 2.5.4-1.8 1.8.4 2.5L12 12.3l-2.2 1.2.4-2.5-1.8-1.8 2.5-.4L12 6.5z"
+                    fill="#fbbf24"
+                    stroke="#fbbf24"
+                    strokeWidth="0.8"
+                  />
+                </svg>
               </div>
-            </form>
-          )}
+
+              <div className="flex flex-col justify-center">
+                <span className="font-extrabold text-xl sm:text-2xl tracking-tight font-serif text-[var(--color-main-text)] leading-tight">
+                  {BRAND.name}
+                </span>
+                <span className="hidden sm:inline text-[10px] sm:text-[11px] font-medium tracking-wide text-[var(--color-secondary-text)] leading-tight">
+                  {BRAND.tagline}
+                </span>
+              </div>
+            </Link>
+
+            {/* City Selector directly right of UTSAV */}
+            <div className="relative flex items-center w-36 sm:w-44 md:w-48">
+              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-2.5 sm:left-3 text-[var(--color-golden-accent)] pointer-events-none" />
+              <select
+                value={selectedCity}
+                onChange={handleCitySelect}
+                aria-label="Filter events by host city"
+                className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-1.5 sm:py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 border border-[var(--color-borders)] text-xs font-bold text-[var(--color-main-text)] focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-1 focus:ring-[var(--color-primary-action)] transition-colors cursor-pointer appearance-none shadow-2xs truncate"
+              >
+                <option value="All Cities">📍 All Cities (India)</option>
+                {CITIES.filter((c) => c !== 'All Cities').map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 sm:right-3 text-[var(--color-secondary-text)] pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Search Bar - Universal Discovery Search in Navbar */}
+          <form
+            onSubmit={handleSearchSubmit}
+            className="hidden sm:flex items-center flex-1 max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg mx-2 md:mx-4 relative"
+            role="search"
+          >
+            <div className="relative w-full flex items-center">
+              <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
+              <input
+                type="text"
+                value={searchValue}
+                onChange={handleSearchChange}
+                placeholder="Search hackathons, music concerts, tech fests, venues..."
+                aria-label="Search events"
+                className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm rounded-full bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/30 border border-[var(--color-borders)] text-[var(--color-main-text)] placeholder:text-[var(--color-secondary-text)]/70 focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-2 focus:ring-[var(--color-primary-action)]/20 transition-all font-medium shadow-2xs"
+              />
+              {searchValue && (
+                <button
+                  type="button"
+                  onClick={handleClearSearch}
+                  className="absolute right-2.5 p-1 rounded-full text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-borders)]/50 transition-colors cursor-pointer"
+                  title="Clear search"
+                  aria-label="Clear search input"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </form>
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-6 shrink-0" aria-label="Main Navigation">
@@ -403,25 +475,23 @@ export default function Navbar() {
 
           {/* Mobile Menu & Theme Button */}
           <div className="flex items-center gap-1.5 md:hidden">
-            {/* Mobile Search Toggle Button (Hidden on Landing & Explore Events Pages) */}
-            {!hideNavbarSearch && (
-              <button
-                type="button"
-                onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-                className={`relative p-2 rounded-xl transition-colors cursor-pointer sm:hidden ${
-                  mobileSearchOpen || searchValue
-                    ? 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]'
-                    : 'text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
-                }`}
-                aria-label="Toggle search bar"
-                title="Search events"
-              >
-                <Search className="w-5 h-5" />
-                {searchValue && !mobileSearchOpen && (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--color-primary-action)]" />
-                )}
-              </button>
-            )}
+            {/* Mobile Search Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+              className={`relative p-2 rounded-xl transition-colors cursor-pointer sm:hidden ${
+                mobileSearchOpen || searchValue
+                  ? 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]'
+                  : 'text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
+              }`}
+              aria-label="Toggle search bar"
+              title="Search events"
+            >
+              <Search className="w-5 h-5" />
+              {searchValue && !mobileSearchOpen && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--color-primary-action)]" />
+              )}
+            </button>
 
             <ThemeSwitcher />
             {isAuthenticated && role === 'attendee' ? (
@@ -490,8 +560,8 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Search Input Drawer (Hidden on Landing & Explore Events Pages) */}
-      {!hideNavbarSearch && mobileSearchOpen && (
+      {/* Mobile Search Input Drawer */}
+      {mobileSearchOpen && (
         <div className="sm:hidden px-4 pb-3.5 pt-1 border-t border-[var(--color-borders)] bg-[var(--color-primary-bg)] animate-fade-in">
           <form onSubmit={handleSearchSubmit} className="relative w-full flex items-center" role="search">
             <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
@@ -532,6 +602,28 @@ export default function Navbar() {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="md:hidden bg-[var(--color-primary-bg)] border-b border-[var(--color-borders)] px-4 pt-3 pb-6 space-y-3 shadow-lg animate-fade-in text-[var(--color-main-text)]">
+          {/* Mobile City Selector */}
+          <div className="relative flex items-center w-full">
+            <MapPin className="w-4 h-4 absolute left-3 text-[var(--color-golden-accent)] pointer-events-none" />
+            <select
+              value={selectedCity}
+              onChange={(e) => {
+                handleCitySelect(e);
+                closeMenu();
+              }}
+              aria-label="Filter events by host city"
+              className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs font-bold text-[var(--color-main-text)] focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-1 focus:ring-[var(--color-primary-action)] transition-colors cursor-pointer appearance-none shadow-2xs"
+            >
+              <option value="All Cities">📍 All Cities (India)</option>
+              {CITIES.filter((c) => c !== 'All Cities').map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 absolute right-3 text-[var(--color-secondary-text)] pointer-events-none" />
+          </div>
+
           {/* Show 'Explore Events' when NOT an authenticated attendee */}
           {!(isAuthenticated && role === 'attendee') && (
             <Link

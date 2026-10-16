@@ -30,8 +30,14 @@ export default function EventsPage() {
   const dateParam = searchParams.get('date') || 'all'; // 'all', 'weekend', '30days'
   const sortParam = searchParams.get('sort') || 'soonest'; // 'soonest', 'price-low', 'price-high', 'title'
 
-  const [searchTerm, setSearchTerm] = useState(searchParams.get('q') || '');
+  const queryParam = searchParams.get('q') || searchParams.get('search') || '';
+  const [searchTerm, setSearchTerm] = useState(queryParam);
   const [bookingEvent, setBookingEvent] = useState(null);
+
+  // Sync searchTerm with URL search params whenever changed from navbar or navigation
+  useEffect(() => {
+    setSearchTerm(queryParam);
+  }, [queryParam]);
 
   // Live data states from MongoDB Atlas
   const [events, setEvents] = useState([]);
@@ -48,6 +54,7 @@ export default function EventsPage() {
       newParams.set('q', val);
     } else {
       newParams.delete('q');
+      newParams.delete('search');
     }
     setSearchParams(newParams);
   };
@@ -72,33 +79,21 @@ export default function EventsPage() {
     setLoading(true);
     setError(null);
     try {
+      const activeQuery = queryParam.trim() || searchTerm.trim();
       const res = await fetchPublishedEventsApi({
-        search: searchTerm.trim() || undefined,
+        search: activeQuery || undefined,
         category: categoryParam !== 'All' ? categoryParam : undefined,
         city: cityParam !== 'All Cities' ? cityParam : undefined,
         format: formatParam !== 'All Formats' ? formatParam : undefined,
         pricing: priceParam !== 'all' ? priceParam : undefined,
+        date: dateParam !== 'all' ? (dateParam === 'weekend' ? 'this-weekend' : dateParam === '30days' ? 'this-month' : dateParam) : undefined,
         sort: sortParam,
         limit: 50,
       });
 
       if (res && Array.isArray(res.events)) {
-        let list = res.events;
-
-        // Apply client date filter if requested
-        if (dateParam !== 'all') {
-          const now = new Date();
-          list = list.filter((evt) => {
-            if (!evt.isoDate) return true;
-            const diffDays = (new Date(evt.isoDate) - now) / (1000 * 60 * 60 * 24);
-            if (dateParam === 'weekend') return diffDays >= 0 && diffDays <= 7;
-            if (dateParam === '30days') return diffDays >= 0 && diffDays <= 30;
-            return true;
-          });
-        }
-
-        setEvents(list);
-        setTotalCount(res.total ?? list.length);
+        setEvents(res.events);
+        setTotalCount(res.total !== undefined ? res.total : res.events.length);
       } else {
         setEvents([]);
         setTotalCount(0);
@@ -111,7 +106,7 @@ export default function EventsPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, categoryParam, cityParam, formatParam, priceParam, sortParam, dateParam]);
+  }, [queryParam, searchTerm, categoryParam, cityParam, formatParam, priceParam, sortParam, dateParam]);
 
   useEffect(() => {
     loadEvents();
@@ -355,8 +350,8 @@ export default function EventsPage() {
 
         {/* Loading Skeletons */}
         {loading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[1, 2, 3, 4, 5, 6].map((n) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
               <div
                 key={n}
                 className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-2xl p-4 space-y-4 animate-pulse"
@@ -397,7 +392,7 @@ export default function EventsPage() {
             variants={staggerContainer(0.08)}
             initial="hidden"
             animate="visible"
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5"
           >
             {events.map((event) => (
               <motion.div

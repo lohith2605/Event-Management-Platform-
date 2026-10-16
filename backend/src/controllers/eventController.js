@@ -18,6 +18,7 @@ export const getPublishedEvents = async (req, res, next) => {
       pricing,
       price,
       featured,
+      date,
       sort = 'soonest',
       page = 1,
       limit = 12,
@@ -69,6 +70,34 @@ export const getPublishedEvents = async (req, res, next) => {
       query.isFeatured = true;
     }
 
+    // 7. Date Filter ('today', 'this-weekend', 'this-week', 'this-month', 'upcoming')
+    if (date && date !== 'all' && date !== 'All Dates') {
+      const now = new Date();
+      if (date === 'today') {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        query.isoDate = { $gte: startOfDay, $lte: endOfDay };
+      } else if (date === 'this-weekend' || date === 'weekend') {
+        const currentDay = now.getDay(); // 0 is Sunday, 5 is Friday, 6 is Saturday
+        const daysToFriday = (5 - currentDay + 7) % 7;
+        const weekendStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (currentDay === 6 ? -1 : currentDay === 0 ? -2 : daysToFriday), 0, 0, 0);
+        const daysToSunday = (7 - currentDay) % 7;
+        const weekendEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday, 23, 59, 59, 999);
+        query.isoDate = { $gte: weekendStart, $lte: weekendEnd };
+      } else if (date === 'this-week') {
+        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const endOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (7 - now.getDay()), 23, 59, 59, 999);
+        query.isoDate = { $gte: startOfWeek, $lte: endOfWeek };
+      } else if (date === 'this-month') {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        query.isoDate = { $gte: startOfMonth, $lte: endOfMonth };
+      } else if (date === 'upcoming') {
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        query.isoDate = { $gte: startOfToday };
+      }
+    }
+
     // Sorting
     let sortOptions = { isoDate: 1 }; // Default: Soonest first
     if (sort === 'latest') {
@@ -77,6 +106,10 @@ export const getPublishedEvents = async (req, res, next) => {
       sortOptions = { priceNumber: 1, isoDate: 1 };
     } else if (sort === 'price-high') {
       sortOptions = { priceNumber: -1, isoDate: 1 };
+    } else if (sort === 'popular') {
+      sortOptions = { spotsLeft: 1, isoDate: 1 };
+    } else if (sort === 'newest') {
+      sortOptions = { createdAt: -1 };
     }
 
     const currentPage = Math.max(1, parseInt(page, 10) || 1);

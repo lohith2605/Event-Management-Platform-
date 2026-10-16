@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   X,
   Compass,
@@ -12,13 +12,43 @@ import {
   LogOut,
   ChevronRight,
   ShieldCheck,
+  MapPin,
+  ChevronDown,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
+import { CITIES } from '../config/taxonomy';
 import ThemeSwitcher from './ThemeSwitcher';
 
 export default function AttendeeMenuDrawer({ isOpen, onClose, user, unreadCount = 0, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentCity = searchParams.get('city') || 'All Cities';
+
+  const handleCityChangeInDrawer = (newCity) => {
+    onClose();
+    const isDiscovery =
+      location.pathname === '/attendee' ||
+      location.pathname === '/attendee/events' ||
+      location.pathname === '/events' ||
+      location.pathname === '/';
+
+    if (isDiscovery) {
+      const next = new URLSearchParams(searchParams);
+      if (newCity && newCity !== 'All Cities') {
+        next.set('city', newCity);
+      } else {
+        next.delete('city');
+      }
+      setSearchParams(next, { replace: true });
+    } else {
+      if (newCity && newCity !== 'All Cities') {
+        navigate(`/attendee?city=${encodeURIComponent(newCity)}`);
+      } else {
+        navigate('/attendee');
+      }
+    }
+  };
 
   // Close drawer on Escape key press
   useEffect(() => {
@@ -154,6 +184,25 @@ export default function AttendeeMenuDrawer({ isOpen, onClose, user, unreadCount 
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* City / Location Selector inside Drawer */}
+          <div className="relative flex items-center w-full mt-3.5">
+            <MapPin className="w-4 h-4 absolute left-3 text-[var(--color-golden-accent)] pointer-events-none" />
+            <select
+              value={currentCity}
+              onChange={(e) => handleCityChangeInDrawer(e.target.value)}
+              aria-label="Filter events by host city"
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs font-bold text-[var(--color-main-text)] focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-1 focus:ring-[var(--color-primary-action)] transition-colors cursor-pointer appearance-none shadow-2xs"
+            >
+              <option value="All Cities">📍 All Cities (India)</option>
+              {CITIES.filter((c) => c !== 'All Cities').map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 absolute right-3 text-[var(--color-secondary-text)] pointer-events-none" />
           </div>
         </div>
 
