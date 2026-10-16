@@ -17,6 +17,7 @@ import {
   Check,
   Sparkles,
   Trash2,
+  Star,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -401,9 +402,18 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
             /* Booking Selection / Confirmation Flow */
             <>
               <div>
-                <h3 className="font-extrabold text-xl text-[var(--color-main-text)] leading-snug font-serif">
-                  {event.title}
-                </h3>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-extrabold text-xl text-[var(--color-main-text)] leading-snug font-serif flex-1">
+                    {event.title}
+                  </h3>
+                  {event.reviewCount > 0 && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-extrabold shrink-0">
+                      <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                      <span>{Number(event.averageRating).toFixed(1)}</span>
+                      <span className="text-[11px] font-medium opacity-75">({event.reviewCount})</span>
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-[var(--color-secondary-text)] mt-1 leading-relaxed">
                   {event.tagline || event.description}
                 </p>

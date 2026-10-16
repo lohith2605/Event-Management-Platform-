@@ -24,6 +24,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import EventCard from '../components/EventCard';
 import BookingModal from '../components/BookingModal';
 import TicketPassModal from '../components/TicketPassModal';
@@ -52,6 +53,7 @@ import { EVENT_CATEGORIES, CITIES, FORMAT_OPTIONS } from '../config/taxonomy';
 
 export default function AttendeeDashboard() {
   const { user } = useAuth();
+  const { latestNotification, unreadCount } = useSocket();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -524,6 +526,26 @@ export default function AttendeeDashboard() {
       console.error('Failed to mark all notifications as read:', err);
     }
   };
+
+  // Live socket notification listener: updates notifications list instantly
+  useEffect(() => {
+    if (latestNotification) {
+      setNotifications((prev) => {
+        const exists = prev.some((n) => n._id === latestNotification._id);
+        if (exists) {
+          return prev.map((n) => (n._id === latestNotification._id ? latestNotification : n));
+        }
+        return [latestNotification, ...prev];
+      });
+    }
+  }, [latestNotification]);
+
+  // Keep stats in sync with real-time unreadCount
+  useEffect(() => {
+    if (typeof unreadCount === 'number') {
+      setStats((prev) => ({ ...prev, unreadNotifications: unreadCount }));
+    }
+  }, [unreadCount]);
 
   // Profile update submission
   const handleUpdateProfile = async (e) => {
@@ -1811,7 +1833,13 @@ export default function AttendeeDashboard() {
                 {notifications.map((n) => (
                   <div
                     key={n._id}
-                    className={`p-4 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
+                    onClick={() => {
+                      if (!n.isRead) handleMarkAsRead(n._id);
+                      if (n.link) navigate(n.link);
+                    }}
+                    className={`p-4 rounded-2xl border transition-all flex items-start justify-between gap-3 ${
+                      n.link ? 'cursor-pointer hover:border-[var(--color-primary-action)]/60 hover:shadow-sm' : ''
+                    } ${
                       n.isRead
                         ? 'bg-[var(--color-card-bg)] border-[var(--color-borders)] opacity-80'
                         : 'bg-[var(--color-card-bg)] border-[var(--color-primary-action)]/40 shadow-xs'
@@ -1839,16 +1867,26 @@ export default function AttendeeDashboard() {
                         <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
                           {n.message}
                         </p>
-                        <span className="text-[10px] text-[var(--color-secondary-text)]/70 block pt-1">
-                          {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
-                        </span>
+                        <div className="flex items-center gap-3 pt-1">
+                          <span className="text-[10px] text-[var(--color-secondary-text)]/70 block">
+                            {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                          </span>
+                          {n.link && (
+                            <span className="text-[10px] font-bold text-[var(--color-primary-action)] hover:underline">
+                              View details &rarr;
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     {!n.isRead && (
                       <button
                         type="button"
-                        onClick={() => handleMarkAsRead(n._id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkAsRead(n._id);
+                        }}
                         className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer shrink-0"
                       >
                         Mark Read
@@ -1911,6 +1949,17 @@ export default function AttendeeDashboard() {
                         (r) => r.eventId?._id === evt._id || r.eventId === evt._id
                       );
 
+                      // Determine if event has ended based on endDate/isoDate and timezone
+                      const now = new Date();
+                      let hasEnded = false;
+                      if (evt.endDate) {
+                        hasEnded = new Date(evt.endDate).getTime() <= now.getTime();
+                      } else if (evt.isoDate) {
+                        hasEnded = new Date(evt.isoDate).getTime() + 4 * 3600 * 1000 <= now.getTime();
+                      } else if (evt.status === 'completed') {
+                        hasEnded = true;
+                      }
+
                       return (
                         <div
                           key={b._id}
@@ -1923,7 +1972,7 @@ export default function AttendeeDashboard() {
                             <span className="text-[11px] text-[var(--color-secondary-text)] block mt-0.5">
                               {evt.date} • {evt.city}
                             </span>
-                            {existingReview && (
+                            {existingReview ? (
                               <div className="flex items-center gap-1 mt-1 text-amber-400">
                                 {[...Array(existingReview.rating)].map((_, i) => (
                                   <Star key={i} className="w-3 h-3 fill-amber-400" />
@@ -1932,21 +1981,36 @@ export default function AttendeeDashboard() {
                                   Reviewed
                                 </span>
                               </div>
-                            )}
+                            ) : !hasEnded ? (
+                              <span className="inline-block mt-1 text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                                Reviews open after event concludes
+                              </span>
+                            ) : null}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setActiveReviewEvent({
-                                event: evt,
-                                existingReview,
-                              })
-                            }
-                            className="px-3 py-2 rounded-xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-[var(--color-primary-text)] font-bold text-xs shrink-0 cursor-pointer shadow-xs"
-                          >
-                            {existingReview ? 'Edit Review' : 'Write Review'}
-                          </button>
+                          {hasEnded ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveReviewEvent({
+                                  event: evt,
+                                  existingReview,
+                                })
+                              }
+                              className="px-3 py-2 rounded-xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-[var(--color-primary-text)] font-bold text-xs shrink-0 cursor-pointer shadow-xs transition-colors"
+                            >
+                              {existingReview ? 'Edit Review' : 'Write Review'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              title="Reviews are unlocked after the event end date and time."
+                              className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-[var(--color-secondary-text)] opacity-60 font-bold text-xs shrink-0 cursor-not-allowed"
+                            >
+                              Upcoming
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1979,15 +2043,31 @@ export default function AttendeeDashboard() {
                         <span className="font-bold text-xs sm:text-sm text-[var(--color-main-text)]">
                           {r.eventId?.title || 'Event'}
                         </span>
-                        <div className="flex items-center gap-1 text-amber-400">
-                          {[...Array(r.rating)].map((_, i) => (
-                            <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
-                          ))}
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 text-amber-400">
+                            {[...Array(r.rating)].map((_, i) => (
+                              <Star key={i} className="w-3.5 h-3.5 fill-amber-400" />
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveReviewEvent({
+                                event: r.eventId,
+                                existingReview: r,
+                              })
+                            }
+                            className="text-xs font-bold text-[var(--color-primary-action)] hover:underline ml-2 cursor-pointer"
+                          >
+                            Edit
+                          </button>
                         </div>
                       </div>
-                      <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
-                        "{r.comment}"
-                      </p>
+                      {r.comment && (
+                        <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
+                          "{r.comment}"
+                        </p>
+                      )}
                       <span className="text-[10px] text-[var(--color-secondary-text)]/70 block">
                         Submitted on {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : ''}
                       </span>

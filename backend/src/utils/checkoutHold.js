@@ -1,6 +1,7 @@
 import Booking from '../models/Booking.js';
 import Event from '../models/Event.js';
 import Notification from '../models/Notification.js';
+import { createAndEmitNotification } from '../services/notificationService.js';
 
 export const CHECKOUT_HOLD_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -32,15 +33,16 @@ export const releaseSingleBookingHold = async (booking, reason = 'Checkout hold 
   booking.paymentFailureReason = reason;
   await booking.save();
 
-  // Create notification
+  // Create notification in real time via Socket.IO
   try {
-    await Notification.create({
+    await createAndEmitNotification({
       userId: booking.userId,
       title: 'Booking Reservation Expired',
       message: `Your reservation ${booking.bookingReference} has expired because payment was not completed within 10 minutes. The held tickets have been released back to general availability.`,
       type: 'system',
       link: '/attendee/bookings',
       metadata: { bookingReference: booking.bookingReference, eventId: booking.eventId },
+      idempotencyKey: `hold_expired_${booking._id}`,
     });
   } catch (err) {
     // Non-blocking notification failure

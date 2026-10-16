@@ -11,6 +11,14 @@ import CouponRedemption from '../models/CouponRedemption.js';
 import { sendCancellationEmailForBooking } from '../services/emailService.js';
 import { processRazorpayRefund, fetchRazorpayRefund } from '../services/refundService.js';
 import { processEventReminders } from '../services/reminderScheduler.js';
+import {
+  createAndEmitNotification,
+  notifyOrganizerEventApproved,
+  notifyOrganizerEventRejected,
+  notifyAttendeesOfPublishedEvent,
+  notifyAttendeeBookingCancelled,
+} from '../services/notificationService.js';
+import { recalculateEventRating } from '../utils/ratingCalculator.js';
 
 /**
  * Helper to record administrative audit log
@@ -469,15 +477,9 @@ export const reviewEvent = async (req, res, next) => {
       event.status = 'published';
       event.rejectionReason = '';
 
-      // Notify organizer
-      await Notification.create({
-        userId: event.organizerId,
-        title: 'Event Approved & Published!',
-        message: `Congratulations! Your event "${event.title}" has been reviewed, approved, and published on UTSAV.`,
-        type: 'event_approved',
-        link: '/organizer/events',
-        metadata: { eventId: event._id, action: 'approve' },
-      });
+      // Notify organizer and eligible attendees in real time via Socket.IO & MongoDB
+      await notifyOrganizerEventApproved(event);
+      await notifyAttendeesOfPublishedEvent(event);
 
       // Audit log
       await recordAuditLog({
@@ -500,15 +502,8 @@ export const reviewEvent = async (req, res, next) => {
       event.status = 'rejected';
       event.rejectionReason = trimmedReason;
 
-      // Notify organizer
-      await Notification.create({
-        userId: event.organizerId,
-        title: 'Event Submission Rejected',
-        message: `Your event submission "${event.title}" was rejected by admin. Reason: ${trimmedReason}`,
-        type: 'event_rejected',
-        link: '/organizer/events',
-        metadata: { eventId: event._id, action: 'reject', reason: trimmedReason },
-      });
+      // Notify organizer in real time via Socket.IO & MongoDB
+      await notifyOrganizerEventRejected(event, trimmedReason);
 
       // Audit log
       await recordAuditLog({
@@ -532,8 +527,8 @@ export const reviewEvent = async (req, res, next) => {
       event.status = 'draft';
       event.rejectionReason = trimmedFeedback;
 
-      // Notify organizer
-      await Notification.create({
+      // Notify organizer in real time via Socket.IO & MongoDB
+      await createAndEmitNotification({
         userId: event.organizerId,
         title: 'Event Returned for Corrections',
         message: `Your event "${event.title}" was returned for adjustments. Feedback: ${trimmedFeedback}`,
@@ -826,7 +821,7 @@ export const updateUserStatus = async (req, res, next) => {
       });
 
       // Notification
-      await Notification.create({
+      await createAndEmitNotification({
         userId: user._id,
         title: 'Account Suspended',
         message: `Your account has been suspended by an administrator. Reason: ${user.suspensionReason}`,
@@ -852,7 +847,7 @@ export const updateUserStatus = async (req, res, next) => {
       });
 
       // Notification
-      await Notification.create({
+      await createAndEmitNotification({
         userId: user._id,
         title: 'Account Reactivated',
         message: 'Your UTSAV account has been successfully reactivated. Full access has been restored.',
@@ -1143,21 +1138,13 @@ export const cancelAndRefundBooking = async (req, res, next) => {
 
     await booking.save();
 
-    // 5. In-app Notification for attendee
+    // 5. In-app Notification for attendee in real-time via Socket.IO
     try {
-      await Notification.create({
-        userId: booking.userId,
-        title: 'Booking Cancelled',
-        message: `Your booking ${booking.bookingReference} has been cancelled by UTSAV administration. Reason: ${trimmedReason}`,
-        type: 'booking_cancelled',
-        link: '/attendee/bookings',
-        metadata: {
-          bookingReference: booking.bookingReference,
-          reason: trimmedReason,
-          refundStatus: booking.refundStatus,
-          refundAmount: booking.refundAmount,
-        },
-      });
+      await notifyAttendeeBookingCancelled(
+        booking,
+        { title: booking.bookingReference },
+        trimmedReason
+      );
     } catch (notifErr) {
       console.warn('Failed to create in-app notification:', notifErr.message);
     }
@@ -1379,6 +1366,9 @@ export const moderateReview = async (req, res, next) => {
     review.status = targetStatus;
     review.moderationReason = trimmedReason;
     await review.save();
+
+    // Recalculate event ratings immediately based on actual active reviews
+    await recalculateEventRating(review.eventId);
 
     // Audit log
     await recordAuditLog({

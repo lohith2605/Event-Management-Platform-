@@ -20,13 +20,14 @@ import { BRAND } from '../config/brand';
 import { CITIES } from '../config/taxonomy';
 import ThemeSwitcher from './ThemeSwitcher';
 import AttendeeMenuDrawer from './AttendeeMenuDrawer';
+import NotificationDropdown from './NotificationDropdown';
 import { useAuth } from '../context/AuthContext';
-import { fetchNotificationsApi } from '../api/attendee';
+import { useSocket } from '../context/SocketContext';
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [attendeeDrawerOpen, setAttendeeDrawerOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const { unreadCount } = useSocket();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -68,22 +69,7 @@ export default function Navbar() {
     return () => clearTimeout(timer);
   }, [searchValue, location.pathname, searchParams, setSearchParams]);
 
-  // Load unread notification count for attendee menu badge
-  useEffect(() => {
-    let isMounted = true;
-    if (isAuthenticated && role === 'attendee') {
-      fetchNotificationsApi()
-        .then((res) => {
-          if (isMounted && res && typeof res.unreadCount === 'number') {
-            setUnreadCount(res.unreadCount);
-          }
-        })
-        .catch(() => {});
-    }
-    return () => {
-      isMounted = false;
-    };
-  }, [isAuthenticated, role, location.pathname]);
+
 
   const isActive = (path) => {
     if (path === '/' && location.pathname === '/') return true;
@@ -385,24 +371,8 @@ export default function Navbar() {
             {isAuthenticated ? (
               role === 'attendee' ? (
                 <div className="flex items-center gap-2 pl-1">
-                  {/* Dedicated Notification Bell Icon */}
-                  <Link
-                    to="/attendee/notifications"
-                    className={`relative p-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-center ${
-                      location.pathname.startsWith('/attendee/notifications')
-                        ? 'bg-[var(--color-primary-action)] text-[var(--color-primary-text)] border border-[var(--color-primary-action)] shadow-xs'
-                        : 'bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/50 border border-[var(--color-borders)] text-[var(--color-main-text)] hover:text-[var(--color-primary-action)]'
-                    }`}
-                    title={unreadCount > 0 ? `${unreadCount} Unread Notifications` : 'View Notifications'}
-                    aria-label="View Notifications"
-                  >
-                    <Bell className="w-4 h-4" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-extrabold rounded-full flex items-center justify-center shadow-xs animate-pulse">
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </span>
-                    )}
-                  </Link>
+                  {/* Dedicated Real-Time In-App Notification Bell & Popover */}
+                  <NotificationDropdown />
 
                   {/* Circular Profile Avatar Button */}
                   <Link
@@ -428,6 +398,9 @@ export default function Navbar() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 pl-1">
+                  {/* Real-time notifications for Organizers & Admins too */}
+                  <NotificationDropdown />
+
                   {/* Circular Profile Avatar Button */}
                   <Link
                     to={getProfilePath()}
@@ -508,24 +481,8 @@ export default function Navbar() {
             <ThemeSwitcher />
             {isAuthenticated && role === 'attendee' ? (
               <>
-                {/* Mobile Notification Bell Icon */}
-                <Link
-                  to="/attendee/notifications"
-                  className={`relative p-2 rounded-xl transition-colors cursor-pointer flex items-center justify-center ${
-                    location.pathname.startsWith('/attendee/notifications')
-                      ? 'bg-[var(--color-primary-action)] text-[var(--color-primary-text)]'
-                      : 'text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
-                  }`}
-                  aria-label="View notifications"
-                  title="Notifications"
-                >
-                  <Bell className="w-5 h-5" />
-                  {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 min-w-[16px] h-[16px] px-0.5 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center animate-pulse">
-                      {unreadCount > 9 ? '9+' : unreadCount}
-                    </span>
-                  )}
-                </Link>
+                {/* Mobile Real-Time Notification Bell & Dropdown */}
+                <NotificationDropdown align="right" />
 
                 <Link
                   to={getProfilePath()}

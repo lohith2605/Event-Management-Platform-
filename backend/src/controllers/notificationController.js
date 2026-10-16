@@ -64,9 +64,15 @@ export const markNotificationRead = async (req, res, next) => {
     notification.isRead = true;
     await notification.save();
 
+    const unreadCount = await Notification.countDocuments({
+      userId: req.user._id,
+      isRead: false,
+    });
+
     res.status(200).json({
       success: true,
       notification,
+      unreadCount,
     });
   } catch (error) {
     next(error);
@@ -88,6 +94,7 @@ export const markAllNotificationsRead = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'All notifications marked as read.',
+      unreadCount: 0,
     });
   } catch (error) {
     next(error);

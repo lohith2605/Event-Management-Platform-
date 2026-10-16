@@ -1,3 +1,4 @@
+import http from 'http';
 import dotenv from 'dotenv';
 dotenv.config();
 
@@ -6,6 +7,7 @@ import app from './app.js';
 import { connectDB } from './config/db.js';
 import logger from './utils/logger.js';
 import { startReminderScheduler, stopReminderScheduler } from './services/reminderScheduler.js';
+import { initSocket } from './services/socketService.js';
 
 const PORT = process.env.PORT || 5000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
@@ -16,8 +18,11 @@ const startServer = async () => {
     logger.info('Initializing MongoDB Atlas connection...');
     const conn = await connectDB();
 
-    // 2. Start HTTP server
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    // 2. Start HTTP server with Socket.IO support
+    const httpServer = http.createServer(app);
+    initSocket(httpServer);
+
+    const server = httpServer.listen(PORT, '0.0.0.0', () => {
       // 3. Render clean professional startup banner after confirmed success
       logger.startupBanner({
         appName: 'UTSAV',

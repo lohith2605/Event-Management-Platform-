@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { X, AlertTriangle, XCircle } from 'lucide-react';
 
 export default function CancelEventModal({ event, isOpen, onClose, onConfirm, isCancelling }) {
-  if (!isOpen || !event) return null;
-
   const [reason, setReason] = useState('Unforeseen scheduling or venue conflict');
+
+  if (!isOpen || !event) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();

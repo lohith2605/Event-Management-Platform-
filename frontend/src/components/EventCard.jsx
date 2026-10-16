@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Calendar, MapPin, Ticket, Users, Globe, Video } from 'lucide-react';
+import { Calendar, MapPin, Ticket, Users, Globe, Video, Star } from 'lucide-react';
 
 const DEFAULT_EVENT_IMAGE =
   'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
@@ -61,10 +61,19 @@ export default function EventCard({ event, onBook, className = '' }) {
       {/* Card Content */}
       <div className="p-4 flex-1 flex flex-col justify-between space-y-3.5">
         <div className="space-y-1.5">
-          {/* Date & Time */}
-          <div className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary-action)]">
-            <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{event.date} • {event.time}</span>
+          {/* Date, Time & Rating */}
+          <div className="flex items-center justify-between gap-1.5 text-xs font-bold text-[var(--color-primary-action)]">
+            <div className="flex items-center gap-1.5 truncate">
+              <Calendar className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{event.date} • {event.time}</span>
+            </div>
+            {event.reviewCount > 0 ? (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-extrabold shrink-0">
+                <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                <span>{Number(event.averageRating).toFixed(1)}</span>
+                <span className="opacity-75 font-medium">({event.reviewCount})</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Title */}

@@ -137,12 +137,40 @@ export const fetchMyReviewsApi = async () => {
   return handleResponse(res);
 };
 
-export const submitReviewApi = async ({ eventId, rating, comment }) => {
+export const fetchEventReviewEligibilityApi = async (eventId) => {
+  const res = await fetch(`/api/reviews/event/${eventId}/eligibility`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+  return handleResponse(res);
+};
+
+export const submitReviewApi = async ({ eventId, rating, comment = '' }) => {
   const res = await fetch('/api/reviews', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ eventId, rating, comment }),
+  });
+  return handleResponse(res);
+};
+
+export const updateReviewApi = async (id, { rating, comment = '' }) => {
+  const res = await fetch(`/api/reviews/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ rating, comment }),
+  });
+  return handleResponse(res);
+};
+
+export const deleteReviewApi = async (id) => {
+  const res = await fetch(`/api/reviews/${id}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
   });
   return handleResponse(res);
 };

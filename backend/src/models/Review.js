@@ -22,7 +22,7 @@ const ReviewSchema = new mongoose.Schema(
     },
     comment: {
       type: String,
-      required: [true, 'Please provide feedback for this event'],
+      default: '',
       trim: true,
       maxlength: [1000, 'Review cannot exceed 1000 characters'],
     },

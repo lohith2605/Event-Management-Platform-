@@ -14,6 +14,7 @@ import {
 } from '../utils/checkoutHold.js';
 import { issueTicketsForBooking } from '../utils/ticketIssuer.js';
 import { sendConfirmationEmailForBooking } from '../services/emailService.js';
+import { notifyAttendeeBookingConfirmed } from '../services/notificationService.js';
 
 /**
  * @desc    Create a Razorpay order for an existing pending booking
@@ -288,16 +289,9 @@ export const verifyPayment = async (req, res, next) => {
     // Issue authentic passes with secure HMAC QR payloads
     const tickets = await issueTicketsForBooking(booking, booking.eventId, req.user);
 
-    // Notify attendee of verified booking confirmation
+    // Notify attendee of verified booking confirmation in real-time via Socket.IO
     try {
-      await Notification.create({
-        userId: booking.userId,
-        title: 'Payment Successful & Booking Confirmed!',
-        message: `Your payment of ₹${booking.totalAmount} for "${booking.eventId?.title || 'event'}" was verified. Digital passes are ready in My Tickets.`,
-        type: 'booking_confirmed',
-        link: '/attendee/tickets',
-        metadata: { bookingReference: booking.bookingReference, eventId: booking.eventId?._id },
-      });
+      await notifyAttendeeBookingConfirmed(booking, booking.eventId);
     } catch (err) {
       // Non-blocking notification creation
     }

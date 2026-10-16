@@ -118,6 +118,19 @@ const EventSchema = new mongoose.Schema(
         description: { type: String, default: '', trim: true },
       },
     ],
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+      index: true,
+    },
+    reviewCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+      index: true,
+    },
   },
   {
     timestamps: true,

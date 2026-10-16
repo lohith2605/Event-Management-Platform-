@@ -14,11 +14,6 @@ export default function ReviewModal({ event, existingReview, onClose, onReviewSu
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!comment.trim()) {
-      setError('Please write your review feedback.');
-      return;
-    }
-
     setSubmitting(true);
     setError(null);
 
@@ -116,7 +111,9 @@ export default function ReviewModal({ event, existingReview, onClose, onReviewSu
 
               {/* Review Comment Textarea */}
               <div>
-                <label className="text-xs font-bold block mb-1.5">Your Feedback</label>
+                <label className="text-xs font-bold block mb-1.5">
+                  Written Feedback <span className="font-normal text-[var(--color-secondary-text)]">(Optional)</span>
+                </label>
                 <textarea
                   rows={4}
                   value={comment}

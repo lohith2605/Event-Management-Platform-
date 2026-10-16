@@ -3,6 +3,7 @@ import Booking from '../models/Booking.js';
 import Ticket from '../models/Ticket.js';
 import Notification from '../models/Notification.js';
 import { sendReminderEmailForBooking } from './emailService.js';
+import { createAndEmitNotification } from './notificationService.js';
 
 let schedulerInterval = null;
 let isProcessing = false;
@@ -137,9 +138,9 @@ export const processEventReminders = async (options = {}) => {
               if (emailRes.success && !emailRes.skipped) {
                 stats.sent24h++;
 
-                // Dispatch in-app notification
+                // Dispatch in-app notification in real time via Socket.IO
                 try {
-                  await Notification.create({
+                  await createAndEmitNotification({
                     userId: booking.userId,
                     title: `Upcoming Event Tomorrow: ${event.title}`,
                     message: `Your registered event "${event.title}" takes place tomorrow at ${event.time || ''}. Your verified digital passes are ready in My Tickets.`,
@@ -150,6 +151,7 @@ export const processEventReminders = async (options = {}) => {
                       bookingId: booking._id,
                       reminderType: '24h',
                     },
+                    idempotencyKey: `reminder_24h_${booking._id}`,
                   });
                 } catch (notifErr) {
                   console.warn('Failed to create 24h reminder in-app notification:', notifErr.message);
@@ -177,9 +179,9 @@ export const processEventReminders = async (options = {}) => {
               if (emailRes.success && !emailRes.skipped) {
                 stats.sent2h++;
 
-                // Dispatch in-app notification
+                // Dispatch in-app notification in real time via Socket.IO
                 try {
-                  await Notification.create({
+                  await createAndEmitNotification({
                     userId: booking.userId,
                     title: `Event Starting in 2 Hours: ${event.title}`,
                     message: `Get ready! "${event.title}" starts in 2 hours at ${event.venue || 'the venue'}. Have your dynamic pass ready for gate check-in.`,
@@ -190,6 +192,7 @@ export const processEventReminders = async (options = {}) => {
                       bookingId: booking._id,
                       reminderType: '2h',
                     },
+                    idempotencyKey: `reminder_2h_${booking._id}`,
                   });
                 } catch (notifErr) {
                   console.warn('Failed to create 2h reminder in-app notification:', notifErr.message);

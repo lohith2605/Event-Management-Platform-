@@ -20,6 +20,11 @@ import {
   validateAndCalculateCouponDiscount,
   normalizeCouponCode,
 } from '../utils/couponCalculator.js';
+import {
+  createAndEmitNotification,
+  notifyAttendeeBookingConfirmed,
+  notifyAttendeeBookingCancelled,
+} from '../services/notificationService.js';
 
 /**
  * @desc    Validate a coupon code and preview discount calculation for checkout
@@ -241,15 +246,8 @@ export const createBooking = async (req, res, next) => {
       // Issue authentic tickets with secure QR payloads
       tickets = await issueTicketsForBooking(booking, updatedEvent, req.user);
 
-      // Create booking confirmation notification
-      await Notification.create({
-        userId: req.user._id,
-        title: 'Booking Confirmed!',
-        message: `Your booking for "${updatedEvent.title}" (${qty} pass${qty > 1 ? 'es' : ''}) is confirmed. Digital passes are ready in My Tickets.`,
-        type: 'booking_confirmed',
-        link: '/attendee/tickets',
-        metadata: { bookingReference, eventId: updatedEvent._id },
-      });
+      // Create booking confirmation notification in real-time via Socket.IO
+      await notifyAttendeeBookingConfirmed(booking, updatedEvent);
 
       // Automated Booking Confirmation & Digital Ticket Email (Phase 2)
       // Safe & non-blocking: email delivery failure will not rollback booking or tickets
@@ -295,13 +293,14 @@ export const createBooking = async (req, res, next) => {
       }
 
       // Create pending payment notification for paid booking
-      await Notification.create({
+      await createAndEmitNotification({
         userId: req.user._id,
         title: 'Booking Reserved (Payment Pending)',
         message: `Your booking reservation ${bookingReference} for "${updatedEvent.title}" is held for 10 minutes. Please complete payment to confirm your passes.`,
         type: 'system',
         link: '/attendee/bookings',
         metadata: { bookingReference, eventId: updatedEvent._id },
+        idempotencyKey: `booking_held_${booking._id}`,
       });
     }
 
@@ -510,14 +509,11 @@ export const cancelBooking = async (req, res, next) => {
 
     // Notify attendee
     try {
-      await Notification.create({
-        userId: req.user._id,
-        title: 'Booking Cancelled',
-        message: `Your booking ${booking.bookingReference} has been cancelled and tickets have been deactivated.`,
-        type: 'booking_cancelled',
-        link: '/attendee/bookings',
-        metadata: { bookingReference: booking.bookingReference },
-      });
+      await notifyAttendeeBookingCancelled(
+        booking,
+        { title: booking.bookingReference },
+        'Attendee cancelled booking'
+      );
     } catch (notifErr) {
       // ignore
     }

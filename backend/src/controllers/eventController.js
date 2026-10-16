@@ -111,6 +111,8 @@ export const getPublishedEvents = async (req, res, next) => {
       sortOptions = { spotsLeft: 1, isoDate: 1 };
     } else if (sort === 'newest') {
       sortOptions = { createdAt: -1 };
+    } else if (sort === 'rating' || sort === 'top-rated') {
+      sortOptions = { averageRating: -1, reviewCount: -1 };
     }
 
     const currentPage = Math.max(1, parseInt(page, 10) || 1);

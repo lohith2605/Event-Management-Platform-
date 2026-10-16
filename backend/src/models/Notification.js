@@ -33,10 +33,12 @@ const NotificationSchema = new mongoose.Schema(
           'event_rejected',
           'event_returned',
           'admin_alert',
+          'event_published',
+          'refund_updated',
         ],
         message: '{VALUE} is not a supported notification type',
       },
-      default: 'booking_confirmed',
+      default: 'system',
       index: true,
     },
     isRead: {

@@ -20,11 +20,21 @@ dotenv.config();
 
 const app = express();
 
-// Development CORS configuration
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+// Development CORS configuration supporting both localhost and 127.0.0.1
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.CORS_ORIGIN ? [process.env.CORS_ORIGIN] : []),
+];
+
 app.use(
   cors({
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
   })
 );

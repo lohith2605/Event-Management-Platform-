@@ -14,6 +14,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { SocketProvider } from './context/SocketContext.jsx';
+import NotificationToastContainer from './components/NotificationToastContainer';
 import { Loader2 } from 'lucide-react';
 
 // Public Layout includes the full marketing and discovery footer
@@ -93,185 +95,189 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Root Route: Smart landing / attendee dashboard redirection */}
-            <Route path="/" element={<RootRoute />} />
-            <Route
-              path="/events"
-              element={
-                <PublicLayout>
-                  <EventsPage />
-                </PublicLayout>
-              }
-            />
-            <Route
-              path="/organizers"
-              element={
-                <PublicLayout>
-                  <OrganizerPage />
-                </PublicLayout>
-              }
-            />
-            <Route path="/organizer" element={<Navigate to="/organizers" replace />} />
+        <SocketProvider>
+          <BrowserRouter>
+            {/* Global Real-Time In-App Notification Toast Popup */}
+            <NotificationToastContainer />
+            <Routes>
+              {/* Root Route: Smart landing / attendee dashboard redirection */}
+              <Route path="/" element={<RootRoute />} />
+              <Route
+                path="/events"
+                element={
+                  <PublicLayout>
+                    <EventsPage />
+                  </PublicLayout>
+                }
+              />
+              <Route
+                path="/organizers"
+                element={
+                  <PublicLayout>
+                    <OrganizerPage />
+                  </PublicLayout>
+                }
+              />
+              <Route path="/organizer" element={<Navigate to="/organizers" replace />} />
 
-            {/* Public Authentication Routes (auto-redirect to dashboard if logged in) */}
-            <Route
-              path="/login"
-              element={
-                <PublicOnlyRoute>
-                  <AuthPage initialMode="login" />
-                </PublicOnlyRoute>
-              }
-            />
-            <Route
-              path="/signup"
-              element={
-                <PublicOnlyRoute>
-                  <AuthPage initialMode="signup" />
-                </PublicOnlyRoute>
-              }
-            />
-            <Route
-              path="/register"
-              element={
-                <PublicOnlyRoute>
-                  <AuthPage initialMode="signup" />
-                </PublicOnlyRoute>
-              }
-            />
-            <Route
-              path="/admin/login"
-              element={
-                <PublicOnlyRoute>
-                  <AdminLoginPage />
-                </PublicOnlyRoute>
-              }
-            />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+              {/* Public Authentication Routes (auto-redirect to dashboard if logged in) */}
+              <Route
+                path="/login"
+                element={
+                  <PublicOnlyRoute>
+                    <AuthPage initialMode="login" />
+                  </PublicOnlyRoute>
+                }
+              />
+              <Route
+                path="/signup"
+                element={
+                  <PublicOnlyRoute>
+                    <AuthPage initialMode="signup" />
+                  </PublicOnlyRoute>
+                }
+              />
+              <Route
+                path="/register"
+                element={
+                  <PublicOnlyRoute>
+                    <AuthPage initialMode="signup" />
+                  </PublicOnlyRoute>
+                }
+              />
+              <Route
+                path="/admin/login"
+                element={
+                  <PublicOnlyRoute>
+                    <AdminLoginPage />
+                  </PublicOnlyRoute>
+                }
+              />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
 
-            {/* Protected Attendee Routes (Clean DashboardLayout without Footer) */}
-            <Route
-              path="/attendee"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/events"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/bookings"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/tickets"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/notifications"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/reviews"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/attendee/profile"
-              element={
-                <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
-                  <DashboardLayout>
-                    <AttendeeDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/attendee/*" element={<Navigate to="/attendee" replace />} />
+              {/* Protected Attendee Routes (Clean DashboardLayout without Footer) */}
+              <Route
+                path="/attendee"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/events"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/bookings"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/tickets"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/notifications"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/reviews"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/attendee/profile"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/attendee/*" element={<Navigate to="/attendee" replace />} />
 
-            {/* Backward Compatibility & Legacy Dashboard Deep-Link Redirects */}
-            <Route path="/dashboard" element={<Navigate to="/attendee" replace />} />
-            <Route path="/dashboard/events" element={<Navigate to="/attendee/events" replace />} />
-            <Route path="/dashboard/bookings" element={<Navigate to="/attendee/bookings" replace />} />
-            <Route path="/dashboard/tickets" element={<Navigate to="/attendee/tickets" replace />} />
-            <Route path="/dashboard/notifications" element={<Navigate to="/attendee/notifications" replace />} />
-            <Route path="/dashboard/reviews" element={<Navigate to="/attendee/reviews" replace />} />
-            <Route path="/dashboard/profile" element={<Navigate to="/attendee/profile" replace />} />
+              {/* Backward Compatibility & Legacy Dashboard Deep-Link Redirects */}
+              <Route path="/dashboard" element={<Navigate to="/attendee" replace />} />
+              <Route path="/dashboard/events" element={<Navigate to="/attendee/events" replace />} />
+              <Route path="/dashboard/bookings" element={<Navigate to="/attendee/bookings" replace />} />
+              <Route path="/dashboard/tickets" element={<Navigate to="/attendee/tickets" replace />} />
+              <Route path="/dashboard/notifications" element={<Navigate to="/attendee/notifications" replace />} />
+              <Route path="/dashboard/reviews" element={<Navigate to="/attendee/reviews" replace />} />
+              <Route path="/dashboard/profile" element={<Navigate to="/attendee/profile" replace />} />
 
-            {/* Protected Organizer Route (Clean DashboardLayout without Footer) */}
-            <Route
-              path="/organizer/dashboard"
-              element={
-                <ProtectedRoute allowedRoles={['organizer', 'admin']}>
-                  <DashboardLayout>
-                    <OrganizerDashboard />
-                  </DashboardLayout>
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/organizer/events" element={<Navigate to="/organizer/dashboard?tab=my-events" replace />} />
-            <Route path="/organizer/create-event" element={<Navigate to="/organizer/dashboard?tab=create-event" replace />} />
-            <Route path="/organizer/bookings" element={<Navigate to="/organizer/dashboard?tab=bookings" replace />} />
-            <Route path="/organizer/attendees" element={<Navigate to="/organizer/dashboard?tab=attendees" replace />} />
-            <Route path="/organizer/analytics" element={<Navigate to="/organizer/dashboard?tab=analytics" replace />} />
-            <Route path="/organizer/profile" element={<Navigate to="/organizer/dashboard?tab=profile" replace />} />
+              {/* Protected Organizer Route (Clean DashboardLayout without Footer) */}
+              <Route
+                path="/organizer/dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['organizer', 'admin']}>
+                    <DashboardLayout>
+                      <OrganizerDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/organizer/events" element={<Navigate to="/organizer/dashboard?tab=my-events" replace />} />
+              <Route path="/organizer/create-event" element={<Navigate to="/organizer/dashboard?tab=create-event" replace />} />
+              <Route path="/organizer/bookings" element={<Navigate to="/organizer/dashboard?tab=bookings" replace />} />
+              <Route path="/organizer/attendees" element={<Navigate to="/organizer/dashboard?tab=attendees" replace />} />
+              <Route path="/organizer/analytics" element={<Navigate to="/organizer/dashboard?tab=analytics" replace />} />
+              <Route path="/organizer/profile" element={<Navigate to="/organizer/dashboard?tab=profile" replace />} />
 
-            {/* Protected Admin Route */}
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="/admin/events" element={<Navigate to="/admin?tab=events" replace />} />
-            <Route path="/admin/users" element={<Navigate to="/admin?tab=users" replace />} />
-            <Route path="/admin/bookings" element={<Navigate to="/admin?tab=bookings" replace />} />
-            <Route path="/admin/reviews" element={<Navigate to="/admin?tab=reviews" replace />} />
-            <Route path="/admin/audit-logs" element={<Navigate to="/admin?tab=audit-logs" replace />} />
-            <Route path="/admin/notifications" element={<Navigate to="/admin?tab=notifications" replace />} />
-            <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
+              {/* Protected Admin Route */}
+              <Route
+                path="/admin"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <AdminDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/admin/events" element={<Navigate to="/admin?tab=events" replace />} />
+              <Route path="/admin/users" element={<Navigate to="/admin?tab=users" replace />} />
+              <Route path="/admin/bookings" element={<Navigate to="/admin?tab=bookings" replace />} />
+              <Route path="/admin/reviews" element={<Navigate to="/admin?tab=reviews" replace />} />
+              <Route path="/admin/audit-logs" element={<Navigate to="/admin?tab=audit-logs" replace />} />
+              <Route path="/admin/notifications" element={<Navigate to="/admin?tab=notifications" replace />} />
+              <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
 
-            {/* Fallback to home */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
+              {/* Fallback to home */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </SocketProvider>
       </AuthProvider>
     </ThemeProvider>
   );

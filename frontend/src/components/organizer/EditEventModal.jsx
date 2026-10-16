@@ -14,36 +14,36 @@ import {
 import { EVENT_CATEGORIES, BANNER_PRESETS } from './EventPresets';
 
 export default function EditEventModal({ event, isOpen, onClose, onSave, isSaving }) {
-  if (!isOpen || !event) return null;
-
   const [formData, setFormData] = useState({
-    title: event.title || '',
-    tagline: event.tagline || '',
-    description: event.description || '',
-    category: event.category || EVENT_CATEGORIES[0],
-    format: event.format || 'In-Person',
-    date: event.date || '',
-    isoDate: event.isoDate ? new Date(event.isoDate).toISOString().split('T')[0] : '',
-    time: event.time || '10:00 AM IST',
-    city: event.city || '',
-    venue: event.venue || '',
-    priceNumber: event.priceNumber || 0,
-    image: event.image || '',
+    title: event?.title || '',
+    tagline: event?.tagline || '',
+    description: event?.description || '',
+    category: event?.category || EVENT_CATEGORIES[0],
+    format: event?.format || 'In-Person',
+    date: event?.date || '',
+    isoDate: event?.isoDate ? new Date(event.isoDate).toISOString().split('T')[0] : '',
+    time: event?.time || '10:00 AM IST',
+    city: event?.city || '',
+    venue: event?.venue || '',
+    priceNumber: event?.priceNumber || 0,
+    image: event?.image || '',
     ticketTiers:
-      Array.isArray(event.ticketTiers) && event.ticketTiers.length > 0
+      Array.isArray(event?.ticketTiers) && event.ticketTiers.length > 0
         ? event.ticketTiers.map((t) => ({ ...t }))
         : [
             {
               name: 'General Admission',
-              price: event.priceNumber || 0,
-              capacity: event.totalCapacity || 100,
-              spotsLeft: event.spotsLeft || 100,
+              price: event?.priceNumber || 0,
+              capacity: event?.totalCapacity || 100,
+              spotsLeft: event?.spotsLeft || 100,
               description: '',
             },
           ],
   });
 
   const [error, setError] = useState(null);
+
+  if (!isOpen || !event) return null;
 
   const handleIsoDateChange = (isoVal) => {
     setFormData((prev) => ({ ...prev, isoDate: isoVal }));
