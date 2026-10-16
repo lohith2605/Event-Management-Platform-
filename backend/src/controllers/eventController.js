@@ -43,9 +43,10 @@ export const getPublishedEvents = async (req, res, next) => {
       ];
     }
 
-    // 2. Category Filter (Case-insensitive match, ignore 'All')
+    // 2. Category Filter (Case-insensitive match, matches single-word or compound category names)
     if (category && category !== 'All' && category !== 'All Categories') {
-      query.category = category.trim();
+      const cleanCat = category.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query.category = new RegExp(cleanCat, 'i');
     }
 
     // 3. City Filter (Ignore 'All' or 'All Cities')

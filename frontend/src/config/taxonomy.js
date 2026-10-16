@@ -2,18 +2,18 @@
 // Represents legitimate product categories, supported host cities, and attendance formats
 
 export const EVENT_CATEGORIES = [
-  "Technology & Hackathons",
-  "Education & Workshops",
-  "Music & Concerts",
-  "Cultural & Arts",
-  "Sports & Fitness",
-  "Business & Networking",
-  "Startup & Innovation",
-  "Gaming & Esports",
-  "Community & Social Impact",
-  "Exhibitions & Fairs",
-  "Entertainment & Comedy",
-  "Health & Wellness",
+  "Technology",
+  "Education",
+  "Music",
+  "Cultural",
+  "Sports",
+  "Business",
+  "Startups",
+  "Gaming",
+  "Community",
+  "Exhibitions",
+  "Entertainment",
+  "Health",
 ];
 
 export const CITIES = [

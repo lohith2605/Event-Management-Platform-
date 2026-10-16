@@ -281,23 +281,35 @@ export default function Navbar() {
               </div>
             </Link>
 
-            {/* City Selector directly right of UTSAV */}
-            <div className="relative flex items-center w-36 sm:w-44 md:w-48">
-              <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 absolute left-2.5 sm:left-3 text-[var(--color-golden-accent)] pointer-events-none" />
+            {/* City Selector Pin Icon directly right of UTSAV */}
+            <div className="relative flex items-center shrink-0">
+              <div
+                className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 border border-[var(--color-borders)] flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
+                  selectedCity !== 'All Cities'
+                    ? 'ring-2 ring-[var(--color-primary-action)]/30 text-[var(--color-primary-action)]'
+                    : 'text-[var(--color-golden-accent)]'
+                }`}
+                title={selectedCity !== 'All Cities' ? `Filtered by ${selectedCity} (Click to change)` : 'Filter events by city'}
+              >
+                <MapPin className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+                {selectedCity !== 'All Cities' && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[var(--color-primary-action)] animate-pulse" />
+                )}
+              </div>
               <select
                 value={selectedCity}
                 onChange={handleCitySelect}
                 aria-label="Filter events by host city"
-                className="w-full pl-8 sm:pl-9 pr-7 sm:pr-8 py-1.5 sm:py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/40 border border-[var(--color-borders)] text-xs font-bold text-[var(--color-main-text)] focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-1 focus:ring-[var(--color-primary-action)] transition-colors cursor-pointer appearance-none shadow-2xs truncate"
+                title={selectedCity !== 'All Cities' ? `City: ${selectedCity}` : 'Filter by city'}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               >
-                <option value="All Cities">📍 All Cities (India)</option>
+                <option value="All Cities">All Cities</option>
                 {CITIES.filter((c) => c !== 'All Cities').map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
                 ))}
               </select>
-              <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 sm:right-3 text-[var(--color-secondary-text)] pointer-events-none" />
             </div>
           </div>
 
@@ -614,7 +626,7 @@ export default function Navbar() {
               aria-label="Filter events by host city"
               className="w-full pl-9 pr-8 py-2.5 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs font-bold text-[var(--color-main-text)] focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-1 focus:ring-[var(--color-primary-action)] transition-colors cursor-pointer appearance-none shadow-2xs"
             >
-              <option value="All Cities">📍 All Cities (India)</option>
+              <option value="All Cities">All Cities</option>
               {CITIES.filter((c) => c !== 'All Cities').map((c) => (
                 <option key={c} value={c}>
                   {c}
