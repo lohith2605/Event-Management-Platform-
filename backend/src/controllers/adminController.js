@@ -202,6 +202,35 @@ export const getAdminStats = async (req, res, next) => {
       .limit(6)
       .lean();
 
+    // 8. Real daily booking & revenue trends (last 14 active days)
+    const bookingTrends = await Booking.aggregate([
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          bookingsCount: { $sum: 1 },
+          confirmedCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] },
+          },
+          confirmedRevenue: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', 'confirmed'] },
+                    { $in: ['$paymentStatus', ['completed', 'free']] },
+                  ],
+                },
+                '$totalAmount',
+                0,
+              ],
+            },
+          },
+        },
+      },
+      { $sort: { _id: 1 } },
+      { $limit: 14 },
+    ]);
+
     res.status(200).json({
       success: true,
       stats: {
@@ -241,6 +270,7 @@ export const getAdminStats = async (req, res, next) => {
           flaggedReviews,
           hiddenReviews,
         },
+        bookingTrends,
         // Backwards compatibility shortcuts for legacy components
         totalUsers,
         totalAttendees,

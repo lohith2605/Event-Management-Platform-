@@ -34,6 +34,9 @@ export default function Navbar() {
   const { user, role, isAuthenticated, logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  // Landing page condition: hide navbar search bar on landing page only since hero has its own dedicated search
+  const isLandingPage = location.pathname === '/';
+
   // Search input state synchronized with ?q=... or ?search=... query param
   const urlQuery = searchParams.get('q') || searchParams.get('search') || '';
   const [searchValue, setSearchValue] = useState(urlQuery);
@@ -299,35 +302,37 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* Search Bar - Universal Discovery Search in Navbar */}
-          <form
-            onSubmit={handleSearchSubmit}
-            className="hidden sm:flex items-center flex-1 max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg mx-2 md:mx-4 relative"
-            role="search"
-          >
-            <div className="relative w-full flex items-center">
-              <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
-              <input
-                type="text"
-                value={searchValue}
-                onChange={handleSearchChange}
-                placeholder="Search hackathons, music concerts, tech fests, venues..."
-                aria-label="Search events"
-                className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm rounded-full bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/30 border border-[var(--color-borders)] text-[var(--color-main-text)] placeholder:text-[var(--color-secondary-text)]/70 focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-2 focus:ring-[var(--color-primary-action)]/20 transition-all font-medium shadow-2xs"
-              />
-              {searchValue && (
-                <button
-                  type="button"
-                  onClick={handleClearSearch}
-                  className="absolute right-2.5 p-1 rounded-full text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-borders)]/50 transition-colors cursor-pointer"
-                  title="Clear search"
-                  aria-label="Clear search input"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </form>
+          {/* Search Bar - Universal Discovery Search in Navbar (hidden on landing page only) */}
+          {!isLandingPage && (
+            <form
+              onSubmit={handleSearchSubmit}
+              className="hidden sm:flex items-center flex-1 max-w-xs md:max-w-sm lg:max-w-md xl:max-w-lg mx-2 md:mx-4 relative"
+              role="search"
+            >
+              <div className="relative w-full flex items-center">
+                <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchValue}
+                  onChange={handleSearchChange}
+                  placeholder="Search hackathons, music concerts, tech fests, venues..."
+                  aria-label="Search events"
+                  className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm rounded-full bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/30 border border-[var(--color-borders)] text-[var(--color-main-text)] placeholder:text-[var(--color-secondary-text)]/70 focus:outline-hidden focus:border-[var(--color-primary-action)] focus:ring-2 focus:ring-[var(--color-primary-action)]/20 transition-all font-medium shadow-2xs"
+                />
+                {searchValue && (
+                  <button
+                    type="button"
+                    onClick={handleClearSearch}
+                    className="absolute right-2.5 p-1 rounded-full text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-borders)]/50 transition-colors cursor-pointer"
+                    title="Clear search"
+                    aria-label="Clear search input"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
 
           {/* Desktop Navigation */}
           <nav className="hidden lg:flex items-center gap-6 shrink-0" aria-label="Main Navigation">
@@ -460,23 +465,25 @@ export default function Navbar() {
 
           {/* Mobile Menu & Theme Button */}
           <div className="flex items-center gap-1.5 md:hidden">
-            {/* Mobile Search Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
-              className={`relative p-2 rounded-xl transition-colors cursor-pointer sm:hidden ${
-                mobileSearchOpen || searchValue
-                  ? 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]'
-                  : 'text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
-              }`}
-              aria-label="Toggle search bar"
-              title="Search events"
-            >
-              <Search className="w-5 h-5" />
-              {searchValue && !mobileSearchOpen && (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--color-primary-action)]" />
-              )}
-            </button>
+            {/* Mobile Search Toggle Button (hidden on landing page) */}
+            {!isLandingPage && (
+              <button
+                type="button"
+                onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+                className={`relative p-2 rounded-xl transition-colors cursor-pointer sm:hidden ${
+                  mobileSearchOpen || searchValue
+                    ? 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)]'
+                    : 'text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]'
+                }`}
+                aria-label="Toggle search bar"
+                title="Search events"
+              >
+                <Search className="w-5 h-5" />
+                {searchValue && !mobileSearchOpen && (
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--color-primary-action)]" />
+                )}
+              </button>
+            )}
 
             <ThemeSwitcher />
             {isAuthenticated && role === 'attendee' ? (
@@ -529,8 +536,8 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Search Input Drawer */}
-      {mobileSearchOpen && (
+      {/* Mobile Search Input Drawer (hidden on landing page) */}
+      {!isLandingPage && mobileSearchOpen && (
         <div className="sm:hidden px-4 pb-3.5 pt-1 border-t border-[var(--color-borders)] bg-[var(--color-primary-bg)] animate-fade-in">
           <form onSubmit={handleSearchSubmit} className="relative w-full flex items-center" role="search">
             <Search className="w-4 h-4 absolute left-3.5 text-[var(--color-secondary-text)] pointer-events-none" />

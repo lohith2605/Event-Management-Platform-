@@ -55,9 +55,9 @@ mongoose.connection.on('error', (err) => {
 
 /**
  * Connects to MongoDB Atlas using process.env.MONGODB_URI.
- * Exits process with code 1 if initial connection fails.
+ * Automatically retries up to 5 times on transient network timeouts.
  */
-export const connectDB = async () => {
+export const connectDB = async (retries = 5, delayMs = 3000) => {
   const mongoUri = process.env.MONGODB_URI;
 
   if (!mongoUri || !mongoUri.trim()) {
@@ -65,18 +65,25 @@ export const connectDB = async () => {
     process.exit(1);
   }
 
-  try {
-    const conn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-      maxPoolSize: 10,
-      socketTimeoutMS: 45000,
-      family: 4,
-    });
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const conn = await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 15000,
+        maxPoolSize: 10,
+        socketTimeoutMS: 45000,
+        family: 4,
+      });
 
-    return conn;
-  } catch (error) {
-    const safeDiagnostic = getSafeDiagnostic(error);
-    logger.error(`Database connection failed: ${safeDiagnostic}`);
-    process.exit(1);
+      return conn;
+    } catch (error) {
+      const safeDiagnostic = getSafeDiagnostic(error);
+      if (attempt < retries) {
+        logger.warn(`Database connection attempt ${attempt}/${retries} failed (${safeDiagnostic}). Retrying in ${delayMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      } else {
+        logger.error(`Database connection failed after ${retries} attempts: ${safeDiagnostic}`);
+        process.exit(1);
+      }
+    }
   }
 };
