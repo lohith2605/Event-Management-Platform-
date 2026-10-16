@@ -30,13 +30,15 @@ const AuditLogSchema = new mongoose.Schema(
         'booking_cancelled_refunded',
         'review_moderated',
         'system_configuration_update',
+        'coupon_status_updated',
+        'coupon_deleted',
       ],
       index: true,
     },
     targetType: {
       type: String,
       required: true,
-      enum: ['Event', 'User', 'Booking', 'Review', 'System'],
+      enum: ['Event', 'User', 'Booking', 'Review', 'System', 'Coupon'],
       index: true,
     },
     targetId: {

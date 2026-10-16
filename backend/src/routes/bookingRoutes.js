@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createBooking,
+  validateCouponForCheckout,
   getMyBookings,
   getBookingById,
   cancelBooking,
@@ -14,6 +15,7 @@ const router = express.Router();
 router.use(protect);
 
 router.post('/', createBooking);
+router.post('/validate-coupon', validateCouponForCheckout);
 router.get('/my-bookings', getMyBookings);
 router.get('/overview-stats', getAttendeeStats);
 router.get('/:id', getBookingById);

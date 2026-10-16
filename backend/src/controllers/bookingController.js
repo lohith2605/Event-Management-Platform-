@@ -4,6 +4,8 @@ import Booking from '../models/Booking.js';
 import Ticket from '../models/Ticket.js';
 import Event from '../models/Event.js';
 import Notification from '../models/Notification.js';
+import Coupon from '../models/Coupon.js';
+import CouponRedemption from '../models/CouponRedemption.js';
 import { getRazorpayInstance } from '../config/razorpay.js';
 import {
   CHECKOUT_HOLD_DURATION_MS,
@@ -14,6 +16,78 @@ import {
   sendConfirmationEmailForBooking,
   sendCancellationEmailForBooking,
 } from '../services/emailService.js';
+import {
+  validateAndCalculateCouponDiscount,
+  normalizeCouponCode,
+} from '../utils/couponCalculator.js';
+
+/**
+ * @desc    Validate a coupon code and preview discount calculation for checkout
+ * @route   POST /api/bookings/validate-coupon
+ * @access  Private (Authenticated Attendee)
+ */
+export const validateCouponForCheckout = async (req, res, next) => {
+  try {
+    const { eventId, quantity = 1, code } = req.body;
+
+    if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or missing event ID.',
+      });
+    }
+
+    if (!code || !code.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a coupon code.',
+      });
+    }
+
+    const qty = Math.max(1, parseInt(quantity, 10) || 1);
+    const event = await Event.findById(eventId);
+
+    if (!event || event.status !== 'published') {
+      return res.status(404).json({
+        success: false,
+        message: 'This event is unavailable or not published.',
+      });
+    }
+
+    const unitPrice = event.priceNumber || 0;
+    const originalSubtotal = unitPrice * qty;
+
+    const result = await validateAndCalculateCouponDiscount({
+      code,
+      event,
+      originalSubtotal,
+      userId: req.user._id,
+    });
+
+    if (!result.isValid) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        message: result.error,
+        originalSubtotal,
+        discountAmount: 0,
+        finalAmount: originalSubtotal,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      valid: true,
+      coupon: result.coupon,
+      originalSubtotal: result.originalSubtotal,
+      discountAmount: result.discountAmount,
+      finalAmount: result.finalAmount,
+      isFree: result.isFree,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 /**
  * @desc    Create a new booking (Free instant confirm or Paid pending gateway with 10-minute hold)
@@ -22,7 +96,13 @@ import {
  */
 export const createBooking = async (req, res, next) => {
   try {
-    const { eventId, quantity = 1, ticketType = 'General Admission', notes = '' } = req.body;
+    const {
+      eventId,
+      quantity = 1,
+      ticketType = 'General Admission',
+      notes = '',
+      couponCode = '',
+    } = req.body;
 
     if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
       return res.status(400).json({
@@ -66,17 +146,50 @@ export const createBooking = async (req, res, next) => {
       });
     }
 
-    const isFree = (updatedEvent.priceNumber || 0) === 0;
     const unitPrice = updatedEvent.priceNumber || 0;
-    const totalAmount = unitPrice * qty;
+    const originalSubtotal = unitPrice * qty;
+
+    // Server-side discount calculation and coupon validation
+    let discountAmount = 0;
+    let finalAmount = originalSubtotal;
+    let appliedCoupon = null;
+
+    if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
+      const couponResult = await validateAndCalculateCouponDiscount({
+        code: couponCode,
+        event: updatedEvent,
+        originalSubtotal,
+        userId: req.user._id,
+      });
+
+      if (!couponResult.isValid) {
+        // Rollback held inventory spots
+        await Event.findByIdAndUpdate(eventId, { $inc: { spotsLeft: qty } });
+        return res.status(400).json({
+          success: false,
+          message: couponResult.error,
+        });
+      }
+
+      discountAmount = couponResult.discountAmount;
+      finalAmount = couponResult.finalAmount;
+      appliedCoupon = couponResult.coupon;
+    }
+
+    const isFree = finalAmount === 0;
+    const totalAmount = finalAmount;
 
     const bookingReference = `UTSAV-BK-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // Free events are immediately confirmed with real passes
+    // Free events or 100% coupon discounts are immediately confirmed with real passes
     // Paid events are set to 'pending' with a strict 10-minute checkout hold
     const bookingStatus = isFree ? 'confirmed' : 'pending';
     const paymentStatus = isFree ? 'free' : 'pending';
-    const paymentMethod = isFree ? 'free_pass' : 'razorpay';
+    const paymentMethod = isFree
+      ? appliedCoupon
+        ? 'coupon_100_percent'
+        : 'free_pass'
+      : 'razorpay';
     const holdExpiresAt = isFree ? null : new Date(Date.now() + CHECKOUT_HOLD_DURATION_MS);
 
     const booking = await Booking.create({
@@ -86,7 +199,11 @@ export const createBooking = async (req, res, next) => {
       ticketType: ticketType || 'General Admission',
       quantity: qty,
       unitPrice,
+      originalSubtotal,
+      discountAmount,
       totalAmount,
+      couponId: appliedCoupon ? appliedCoupon._id : null,
+      couponCode: appliedCoupon ? appliedCoupon.code : '',
       currency: 'INR',
       status: bookingStatus,
       paymentStatus,
@@ -102,6 +219,25 @@ export const createBooking = async (req, res, next) => {
     let orderData = null;
 
     if (isFree) {
+      // If 100% discounted via coupon, finalize redemption immediately
+      if (appliedCoupon) {
+        await Coupon.findByIdAndUpdate(appliedCoupon._id, {
+          $inc: { redemptionCount: 1 },
+        });
+
+        await CouponRedemption.create({
+          couponId: appliedCoupon._id,
+          couponCode: appliedCoupon.code,
+          userId: req.user._id,
+          eventId: updatedEvent._id,
+          bookingId: booking._id,
+          bookingReference,
+          originalSubtotal,
+          discountAmount,
+          finalAmount: 0,
+          status: 'completed',
+        });
+      }
       // Issue authentic tickets with secure QR payloads
       tickets = await issueTicketsForBooking(booking, updatedEvent, req.user);
 
@@ -349,6 +485,28 @@ export const cancelBooking = async (req, res, next) => {
       { bookingId: booking._id },
       { status: 'cancelled' }
     );
+
+    // If a coupon was redeemed for this booking, adjust redemption status and coupon usage
+    if (booking.couponId) {
+      try {
+        const redemption = await CouponRedemption.findOne({
+          bookingId: booking._id,
+          status: 'completed',
+        });
+
+        if (redemption) {
+          redemption.status = 'cancelled';
+          await redemption.save();
+
+          await Coupon.findOneAndUpdate(
+            { _id: booking.couponId, redemptionCount: { $gt: 0 } },
+            { $inc: { redemptionCount: -1 } }
+          );
+        }
+      } catch (couponCancelErr) {
+        console.error('Failed to restore coupon usage on cancellation:', couponCancelErr.message);
+      }
+    }
 
     // Notify attendee
     try {

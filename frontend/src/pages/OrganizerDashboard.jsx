@@ -18,6 +18,7 @@ import {
   Palette,
   ShieldCheck,
   RefreshCw,
+  Tag,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -38,6 +39,7 @@ import CreateEventTab from '../components/organizer/CreateEventTab';
 import AttendeesTab from '../components/organizer/AttendeesTab';
 import BookingsTab from '../components/organizer/BookingsTab';
 import AnalyticsTab from '../components/organizer/AnalyticsTab';
+import CouponsTab from '../components/organizer/CouponsTab';
 import ProfileSettingsTab from '../components/organizer/ProfileSettingsTab';
 import EditEventModal from '../components/organizer/EditEventModal';
 import CancelEventModal from '../components/organizer/CancelEventModal';
@@ -47,6 +49,7 @@ const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'my-events', label: 'My Events', icon: Calendar },
   { id: 'create-event', label: 'Create Event', icon: PlusCircle },
+  { id: 'coupons', label: 'Coupons & Discounts', icon: Tag },
   { id: 'attendees', label: 'Attendees', icon: Users },
   { id: 'bookings', label: 'Bookings', icon: Ticket },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -532,6 +535,12 @@ export default function OrganizerDashboard() {
                   setStatusFilter={setBookingsStatusFilter}
                   searchQuery={bookingsSearchQuery}
                   setSearchQuery={setBookingsSearchQuery}
+                />
+              )}
+
+              {activeTab === 'coupons' && (
+                <CouponsTab
+                  events={events.length > 0 ? events : overviewData?.upcomingEvents || []}
                 />
               )}
 

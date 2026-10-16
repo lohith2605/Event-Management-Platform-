@@ -6,6 +6,8 @@ import Ticket from '../models/Ticket.js';
 import Review from '../models/Review.js';
 import Notification from '../models/Notification.js';
 import AuditLog from '../models/AuditLog.js';
+import Coupon from '../models/Coupon.js';
+import CouponRedemption from '../models/CouponRedemption.js';
 import { sendCancellationEmailForBooking } from '../services/emailService.js';
 import { processRazorpayRefund, fetchRazorpayRefund } from '../services/refundService.js';
 import { processEventReminders } from '../services/reminderScheduler.js';
@@ -1065,6 +1067,28 @@ export const cancelAndRefundBooking = async (req, res, next) => {
       { bookingId: booking._id },
       { status: 'cancelled' }
     );
+
+    // If booking utilized a coupon, adjust redemption status and restore count
+    if (booking.couponId) {
+      try {
+        const redemption = await CouponRedemption.findOne({
+          bookingId: booking._id,
+          status: 'completed',
+        });
+
+        if (redemption) {
+          redemption.status = 'refunded';
+          await redemption.save();
+
+          await Coupon.findOneAndUpdate(
+            { _id: booking.couponId, redemptionCount: { $gt: 0 } },
+            { $inc: { redemptionCount: -1 } }
+          );
+        }
+      } catch (couponRefundErr) {
+        console.error('Failed to update coupon usage on admin refund:', couponRefundErr.message);
+      }
+    }
 
     // 4. Process Refund according to payment state and method
     const isPaid =

@@ -7,6 +7,7 @@ import {
   ScrollText,
   Bell,
   Sparkles,
+  Tag,
 } from 'lucide-react';
 import ThemeSwitcher from '../ThemeSwitcher';
 
@@ -15,6 +16,7 @@ export const ADMIN_NAV_ITEMS = [
   { id: 'events', label: 'Event Moderation', icon: ShieldCheck, badgeKey: 'pendingEvents' },
   { id: 'users', label: 'User Governance', icon: Users, badgeKey: 'suspendedUsers' },
   { id: 'bookings', label: 'Bookings & Payments', icon: Receipt },
+  { id: 'coupons', label: 'Coupons & Discounts', icon: Tag },
   { id: 'reviews', label: 'Reviews & Feedback', icon: MessageSquareQuote, badgeKey: 'flaggedReviews' },
   { id: 'audit-logs', label: 'Audit Trail', icon: ScrollText },
   { id: 'notifications', label: 'Alerts & Notices', icon: Bell, badgeKey: 'unreadNotifs' },

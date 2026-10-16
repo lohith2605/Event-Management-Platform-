@@ -45,12 +45,18 @@ export const fetchBookingByIdApi = async (id) => {
   return handleResponse(res);
 };
 
-export const createBookingApi = async ({ eventId, quantity = 1, ticketType = 'General Admission', notes = '' }) => {
+export const createBookingApi = async ({
+  eventId,
+  quantity = 1,
+  ticketType = 'General Admission',
+  notes = '',
+  couponCode = '',
+}) => {
   const res = await fetch('/api/bookings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ eventId, quantity, ticketType, notes }),
+    body: JSON.stringify({ eventId, quantity, ticketType, notes, couponCode }),
   });
   return handleResponse(res);
 };

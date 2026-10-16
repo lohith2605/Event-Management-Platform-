@@ -13,6 +13,10 @@ import {
   Minus,
   ShieldCheck,
   ArrowRight,
+  Tag,
+  Check,
+  Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -20,6 +24,7 @@ import {
   verifyPaymentApi,
   recordPaymentFailureApi,
 } from '../api/attendee';
+import { validateCouponApi } from '../api/coupons';
 import { loadRazorpayScript } from '../utils/razorpay';
 
 export default function BookingModal({ event, onClose, onBookingSuccess }) {
@@ -31,25 +36,115 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
   const [error, setError] = useState(null);
   const [successData, setSuccessData] = useState(null);
 
+  // Coupon state
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [couponError, setCouponError] = useState(null);
+  const [couponSuccess, setCouponSuccess] = useState(null);
+
   if (!event) return null;
 
-  const isFree = (event.priceNumber || 0) === 0;
+  const isFreeEvent = (event.priceNumber || 0) === 0;
   const unitPrice = event.priceNumber || 0;
-  const totalPrice = unitPrice * quantity;
+  const rawSubtotal = unitPrice * quantity;
+  const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+  const finalPayable = appliedCoupon ? appliedCoupon.finalAmount : rawSubtotal;
+  const isZeroPayable = finalPayable === 0;
+  const effectiveIsFree = isFreeEvent || isZeroPayable;
+
   const spotsAvailable = event.spotsLeft !== undefined ? event.spotsLeft : 100;
   const isSoldOut = spotsAvailable <= 0;
   const maxAllowed = Math.min(5, Math.max(1, spotsAvailable));
 
+  // Helper to revalidate an already applied coupon if quantity changes
+  const revalidateWithNewQty = async (newQty) => {
+    if (!appliedCoupon) return;
+    try {
+      const res = await validateCouponApi({
+        eventId: event._id || event.id,
+        quantity: newQty,
+        code: appliedCoupon.coupon.code,
+      });
+
+      if (res && res.valid) {
+        setAppliedCoupon(res);
+        setCouponSuccess(`Coupon ${res.coupon.code} applied! Saved ₹${res.discountAmount}`);
+        setCouponError(null);
+      } else {
+        setAppliedCoupon(null);
+        setCouponSuccess(null);
+        setCouponError(res?.message || 'Coupon requirement no longer met for this quantity.');
+      }
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponSuccess(null);
+      setCouponError(err.message || 'Coupon could not be applied for this quantity.');
+    }
+  };
+
   const handleIncrement = () => {
     if (quantity < maxAllowed) {
-      setQuantity((prev) => prev + 1);
+      const nextQty = quantity + 1;
+      setQuantity(nextQty);
+      if (appliedCoupon) {
+        revalidateWithNewQty(nextQty);
+      }
     }
   };
 
   const handleDecrement = () => {
     if (quantity > 1) {
-      setQuantity((prev) => prev - 1);
+      const nextQty = quantity - 1;
+      setQuantity(nextQty);
+      if (appliedCoupon) {
+        revalidateWithNewQty(nextQty);
+      }
     }
+  };
+
+  const handleApplyCoupon = async (e) => {
+    if (e) e.preventDefault();
+    const trimmed = couponInput.trim().toUpperCase();
+    if (!trimmed) {
+      setCouponError('Please enter a coupon code.');
+      return;
+    }
+
+    setValidatingCoupon(true);
+    setCouponError(null);
+    setCouponSuccess(null);
+
+    try {
+      const res = await validateCouponApi({
+        eventId: event._id || event.id,
+        quantity,
+        code: trimmed,
+      });
+
+      if (res && res.valid) {
+        setAppliedCoupon(res);
+        setCouponSuccess(
+          `Coupon "${res.coupon.code}" applied! You saved ₹${res.discountAmount}.`
+        );
+        setCouponInput('');
+      } else {
+        setAppliedCoupon(null);
+        setCouponError(res?.message || 'Invalid coupon code.');
+      }
+    } catch (err) {
+      setAppliedCoupon(null);
+      setCouponError(err.message || 'Failed to validate coupon code.');
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponError(null);
+    setCouponSuccess(null);
+    setCouponInput('');
   };
 
   const handleBookTickets = async () => {
@@ -66,7 +161,10 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
       const res = await createBookingApi({
         eventId: event._id || event.id,
         quantity,
-        ticketType: isFree ? 'General Admission (Free Pass)' : 'Standard Admission',
+        ticketType: effectiveIsFree
+          ? 'General Admission (Free Pass)'
+          : 'Standard Admission',
+        couponCode: appliedCoupon ? appliedCoupon.coupon.code : '',
       });
 
       if (!res || !res.success) {
@@ -75,8 +173,8 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
         return;
       }
 
-      // Free events confirm immediately
-      if (isFree) {
+      // Free events or 100% coupon discount confirm immediately
+      if (res.isFree || res.booking?.paymentStatus === 'free') {
         setSuccessData(res);
         if (onBookingSuccess) {
           onBookingSuccess(res);
@@ -85,11 +183,13 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
         return;
       }
 
-      // Paid event: Launch Razorpay Checkout
+      // Paid event: Launch Razorpay Checkout with server-created order
       if (res.order) {
         const isScriptLoaded = await loadRazorpayScript();
         if (!isScriptLoaded || !window.Razorpay) {
-          setError('Payment checkout failed to initialize. Please check your internet connection or disable adblockers.');
+          setError(
+            'Payment checkout failed to initialize. Please check your internet connection or disable adblockers.'
+          );
           setSubmitting(false);
           return;
         }
@@ -113,8 +213,7 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
             color: '#6366f1',
           },
           handler: async (paymentResponse) => {
-            // NEVER mark booking as paid on frontend alone!
-            // Server-side verification of payment signature
+            // Server-side verification of cryptographic payment signature
             setSubmitting(true);
             try {
               const verifyRes = await verifyPaymentApi({
@@ -150,7 +249,9 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
               } catch (e) {
                 // Non-blocking
               }
-              setError('Payment window closed. Your reservation is held for 10 minutes. You can complete payment from My Bookings.');
+              setError(
+                'Payment window closed. Your reservation is held for 10 minutes. You can complete payment from My Bookings.'
+              );
             },
           },
         };
@@ -167,7 +268,9 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
           } catch (e) {
             // Non-blocking
           }
-          setError(`Payment failed: ${failedData.error?.description || 'Transaction was declined.'}`);
+          setError(
+            `Payment failed: ${failedData.error?.description || 'Transaction was declined.'}`
+          );
         });
 
         rzp.open();
@@ -223,10 +326,10 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
 
               <div>
                 <h3 className="font-extrabold text-xl text-[var(--color-main-text)] font-serif">
-                  {isFree ? 'Booking Confirmed!' : 'Payment Verified & Confirmed!'}
+                  {effectiveIsFree ? 'Booking Confirmed!' : 'Payment Verified & Confirmed!'}
                 </h3>
                 <p className="text-xs text-[var(--color-secondary-text)] mt-1">
-                  {isFree
+                  {effectiveIsFree
                     ? `Your ${quantity} digital pass${quantity > 1 ? 'es are' : ' is'} issued and ready for admission.`
                     : `Payment verified successfully. Your ${quantity} digital pass${quantity > 1 ? 'es are' : ' is'} ready in My Tickets.`}
                 </p>
@@ -249,10 +352,26 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                   <span className="text-[var(--color-secondary-text)]">Passes Issued</span>
                   <span className="font-semibold text-[var(--color-main-text)]">{quantity}</span>
                 </div>
+
+                {/* Show coupon details if applied */}
+                {successData.booking?.couponCode && (
+                  <div className="flex justify-between items-center text-emerald-600 dark:text-emerald-400">
+                    <span className="flex items-center gap-1 font-medium">
+                      <Tag className="w-3.5 h-3.5" />
+                      Coupon ({successData.booking.couponCode})
+                    </span>
+                    <span className="font-bold">
+                      -₹{successData.booking.discountAmount || discountAmount}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex justify-between items-center pt-2 border-t border-[var(--color-borders)]">
                   <span className="text-[var(--color-secondary-text)]">Total Paid</span>
-                  <span className="font-bold text-[var(--color-main-text)]">
-                    {isFree ? '₹0 (Free Pass)' : `₹${totalPrice}`}
+                  <span className="font-bold text-[var(--color-main-text)] text-sm">
+                    {successData.booking?.totalAmount === 0 || effectiveIsFree
+                      ? '₹0 (Free Pass)'
+                      : `₹${successData.booking?.totalAmount || finalPayable}`}
                   </span>
                 </div>
               </div>
@@ -300,13 +419,15 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-[var(--color-golden-accent)] shrink-0" />
-                  <span className="truncate">{event.venue}, {event.city}</span>
+                  <span className="truncate">
+                    {event.venue}, {event.city}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-[var(--color-borders)]/80">
                   <div className="flex items-center gap-2">
                     <Ticket className="w-4 h-4 text-[var(--color-primary-action)]" />
                     <span className="font-bold text-[var(--color-main-text)]">
-                      {isFree ? 'Free Admission' : `Price: ${event.price}`}
+                      {isFreeEvent ? 'Free Admission' : `Price: ${event.price}`}
                     </span>
                   </div>
                   <span
@@ -360,19 +481,140 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                     </div>
                   </div>
 
+                  {/* Coupon & Discount Management (Feature 13) */}
+                  {!isFreeEvent && (
+                    <div className="p-3.5 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="checkout-coupon-code"
+                          className="text-xs font-bold text-[var(--color-main-text)] flex items-center gap-1.5"
+                        >
+                          <Tag className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
+                          <span>Promo Code or Coupon</span>
+                        </label>
+                        {appliedCoupon && (
+                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                            Coupon Applied
+                          </span>
+                        )}
+                      </div>
+
+                      {appliedCoupon ? (
+                        /* Applied Coupon Badge with Remove button */
+                        <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs animate-fade-in">
+                          <div className="flex items-center gap-2">
+                            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 uppercase">
+                                  {appliedCoupon.coupon.code}
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.2 bg-emerald-600 text-white rounded">
+                                  -₹{appliedCoupon.discountAmount}
+                                </span>
+                              </div>
+                              {appliedCoupon.coupon.description && (
+                                <p className="text-[11px] text-[var(--color-secondary-text)] mt-0.5">
+                                  {appliedCoupon.coupon.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleRemoveCoupon}
+                            className="text-xs text-red-500 hover:text-red-700 font-semibold px-2 py-1 rounded hover:bg-red-500/10 transition-colors cursor-pointer flex items-center gap-1"
+                            title="Remove coupon"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Remove</span>
+                          </button>
+                        </div>
+                      ) : (
+                        /* Coupon Input Field */
+                        <form
+                          onSubmit={handleApplyCoupon}
+                          className="flex items-center gap-2"
+                        >
+                          <div className="relative flex-1">
+                            <input
+                              id="checkout-coupon-code"
+                              type="text"
+                              placeholder="Enter coupon code (e.g. UTSAV20)"
+                              value={couponInput}
+                              onChange={(e) => {
+                                setCouponInput(e.target.value.toUpperCase());
+                                setCouponError(null);
+                              }}
+                              className="w-full text-xs font-mono uppercase px-3 py-2 bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] rounded-lg text-[var(--color-main-text)] placeholder:text-[var(--color-secondary-text)] focus:outline-none focus:border-[var(--color-primary-action)]"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={validatingCoupon || !couponInput.trim()}
+                            className="px-3.5 py-2 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-main-text)] hover:text-[var(--color-primary-action)] font-bold text-xs rounded-lg transition-colors disabled:opacity-40 flex items-center gap-1.5 cursor-pointer shrink-0"
+                          >
+                            {validatingCoupon ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <span>Apply</span>
+                            )}
+                          </button>
+                        </form>
+                      )}
+
+                      {/* Coupon Feedback Messages */}
+                      {couponSuccess && !appliedCoupon && (
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5 shrink-0" />
+                          <span>{couponSuccess}</span>
+                        </p>
+                      )}
+                      {couponError && (
+                        <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 animate-fade-in">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{couponError}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
                   {/* Summary & Price Breakdown */}
                   <div className="p-3 bg-[var(--color-secondary-bg)]/60 rounded-xl space-y-1.5 text-xs">
                     <div className="flex justify-between">
                       <span className="text-[var(--color-secondary-text)]">Attendee</span>
-                      <span className="font-semibold text-[var(--color-main-text)]">{user?.name} ({user?.email})</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-[var(--color-secondary-text)]">Order Subtotal</span>
-                      <span className="font-bold text-[var(--color-main-text)]">
-                        {isFree ? 'Free (₹0)' : `₹${unitPrice} × ${quantity} = ₹${totalPrice}`}
+                      <span className="font-semibold text-[var(--color-main-text)]">
+                        {user?.name} ({user?.email})
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-secondary-text)] pt-1 border-t border-[var(--color-borders)]">
+
+                    <div className="flex justify-between">
+                      <span className="text-[var(--color-secondary-text)]">Order Subtotal</span>
+                      <span className="font-semibold text-[var(--color-main-text)]">
+                        {isFreeEvent
+                          ? 'Free (₹0)'
+                          : `₹${unitPrice} × ${quantity} = ₹${rawSubtotal}`}
+                      </span>
+                    </div>
+
+                    {appliedCoupon && (
+                      <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                        <span className="flex items-center gap-1">
+                          <Tag className="w-3 h-3" />
+                          Coupon Discount ({appliedCoupon.coupon.code})
+                        </span>
+                        <span className="font-bold">-₹{discountAmount}</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between pt-1 border-t border-[var(--color-borders)]">
+                      <span className="font-bold text-[var(--color-main-text)]">Final Payable</span>
+                      <span className="font-extrabold text-[var(--color-main-text)] text-sm">
+                        {effectiveIsFree ? '₹0 (Free Pass)' : `₹${finalPayable}`}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-secondary-text)] pt-1">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                       <span>Official digital passes with instant QR check-in.</span>
                     </div>
@@ -400,14 +642,23 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                       </>
                     ) : isSoldOut ? (
                       <span>Sold Out</span>
-                    ) : isFree ? (
+                    ) : effectiveIsFree ? (
                       <>
-                        <span>Confirm Free Booking ({quantity} pass{quantity > 1 ? 'es' : ''})</span>
+                        <Sparkles className="w-4 h-4" />
+                        <span>
+                          Confirm Free Booking ({quantity} pass{quantity > 1 ? 'es' : ''})
+                          {appliedCoupon ? ' • Coupon Applied' : ''}
+                        </span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     ) : (
                       <>
-                        <span>Pay & Confirm • ₹{totalPrice}</span>
+                        <span>Pay & Confirm • ₹{finalPayable}</span>
+                        {appliedCoupon && (
+                          <span className="text-[10px] opacity-90 line-through">
+                            ₹{rawSubtotal}
+                          </span>
+                        )}
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}
@@ -422,7 +673,7 @@ export default function BookingModal({ event, onClose, onBookingSuccess }) {
                       <span>Sign In Required for Digital Pass</span>
                     </div>
                     <p className="text-xs text-[var(--color-main-text)] leading-relaxed">
-                      To reserve your ticket, receive your dynamic QR admission pass, and access event updates, sign in to your UTSAV account or register in seconds.
+                      To reserve your ticket, apply discount coupons, receive your dynamic QR admission pass, and access event updates, sign in to your UTSAV account or register in seconds.
                     </p>
                   </div>
 

@@ -46,6 +46,28 @@ const BookingSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+    originalSubtotal: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    couponId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Coupon',
+      default: null,
+      index: true,
+    },
+    couponCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: '',
+    },
     currency: {
       type: String,
       default: 'INR',

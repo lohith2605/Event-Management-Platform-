@@ -34,6 +34,7 @@ import AdminBookingDetailModal from '../components/admin/AdminBookingDetailModal
 import AdminReviewsTab from '../components/admin/AdminReviewsTab';
 import AdminAuditLogsTab from '../components/admin/AdminAuditLogsTab';
 import AdminNotificationsModal from '../components/admin/AdminNotificationsModal';
+import AdminCouponsTab from '../components/admin/AdminCouponsTab';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
@@ -726,6 +727,10 @@ export default function AdminDashboard() {
                 onOpenBookingDetails={openBookingDetails}
                 onOpenCancelRefundModal={(bk) => openBookingDetails(bk._id)}
               />
+            )}
+
+            {activeTab === 'coupons' && (
+              <AdminCouponsTab onShowToast={showToast} />
             )}
 
             {activeTab === 'reviews' && (

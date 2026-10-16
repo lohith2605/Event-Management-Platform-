@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import Booking from '../models/Booking.js';
 import Event from '../models/Event.js';
 import Notification from '../models/Notification.js';
+import Coupon from '../models/Coupon.js';
+import CouponRedemption from '../models/CouponRedemption.js';
 import { getRazorpayInstance } from '../config/razorpay.js';
 import {
   CHECKOUT_HOLD_DURATION_MS,
@@ -255,6 +257,33 @@ export const verifyPayment = async (req, res, next) => {
     booking.paidAt = new Date();
     booking.paymentFailureReason = '';
     await booking.save();
+
+    // Finalize coupon redemption idempotently upon confirmed payment
+    if (booking.couponId) {
+      try {
+        const existingRedemption = await CouponRedemption.findOne({ bookingId: booking._id });
+        if (!existingRedemption) {
+          await Coupon.findByIdAndUpdate(booking.couponId, {
+            $inc: { redemptionCount: 1 },
+          });
+
+          await CouponRedemption.create({
+            couponId: booking.couponId,
+            couponCode: booking.couponCode,
+            userId: booking.userId,
+            eventId: booking.eventId?._id || booking.eventId,
+            bookingId: booking._id,
+            bookingReference: booking.bookingReference,
+            originalSubtotal: booking.originalSubtotal || booking.totalAmount,
+            discountAmount: booking.discountAmount || 0,
+            finalAmount: booking.totalAmount,
+            status: 'completed',
+          });
+        }
+      } catch (couponRedeemErr) {
+        console.error('Failed to record coupon redemption on payment verification:', couponRedeemErr.message);
+      }
+    }
 
     // Issue authentic passes with secure HMAC QR payloads
     const tickets = await issueTicketsForBooking(booking, booking.eventId, req.user);

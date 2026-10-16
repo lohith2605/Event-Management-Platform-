@@ -20,6 +20,11 @@ import {
   markAllAdminNotificationsRead,
   triggerRemindersCheck,
 } from '../controllers/adminController.js';
+import {
+  getAdminCoupons,
+  getAdminCouponStats,
+  updateAdminCouponStatus,
+} from '../controllers/adminCouponController.js';
 import { protect, authorize } from '../middlewares/auth.js';
 
 const router = express.Router();
@@ -62,5 +67,10 @@ router.put('/notifications/read-all', markAllAdminNotificationsRead);
 
 // Automated Event Reminders Trigger
 router.post('/reminders/trigger', triggerRemindersCheck);
+
+// Platform Coupon Governance & Moderation (Feature 13)
+router.get('/coupons/stats', getAdminCouponStats);
+router.get('/coupons', getAdminCoupons);
+router.patch('/coupons/:id/status', updateAdminCouponStatus);
 
 export default router;
