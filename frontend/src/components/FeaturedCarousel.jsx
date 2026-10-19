@@ -16,12 +16,21 @@ import { fetchPublishedEventsApi } from '../api/events';
 const DEFAULT_FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
 
-export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewEvent }) {
+export default function FeaturedCarousel({
+  onSelectEvent,
+  onExploreMore,
+  onViewEvent,
+  autoRotateInterval = 2000,
+}) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [failedImages, setFailedImages] = useState({});
+  const [isHovered, setIsHovered] = useState(false);
+  const [isTabHidden, setIsTabHidden] = useState(
+    typeof document !== 'undefined' ? document.hidden : false
+  );
 
   // Query genuine featured events, or fallback to upcoming published events
   const loadFeaturedEvents = useCallback(async () => {
@@ -56,21 +65,43 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
     loadFeaturedEvents();
   }, [loadFeaturedEvents]);
 
+  // Listen for browser tab visibility to avoid background timer accumulation
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsTabHidden(document.hidden);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
+
   const handleImageError = (eventId) => {
     setFailedImages((prev) => ({ ...prev, [eventId]: true }));
   };
 
-  const goToPrev = () => {
+  const goToPrev = useCallback(() => {
     if (events.length > 1) {
       setCurrentIndex((prev) => (prev === 0 ? events.length - 1 : prev - 1));
     }
-  };
+  }, [events.length]);
 
-  const goToNext = () => {
+  const goToNext = useCallback(() => {
     if (events.length > 1) {
       setCurrentIndex((prev) => (prev + 1) % events.length);
     }
-  };
+  }, [events.length]);
+
+  // Automatic rotation between eligible events every 5 seconds (pauses on hover or when tab is hidden)
+  const isPaused = isHovered || isTabHidden;
+
+  useEffect(() => {
+    if (events.length <= 1 || isPaused) return;
+
+    const timer = setInterval(() => {
+      goToNext();
+    }, autoRotateInterval);
+
+    return () => clearInterval(timer);
+  }, [events.length, isPaused, goToNext, currentIndex, autoRotateInterval]);
 
   // 1. Loading Skeleton State
   if (loading) {
@@ -130,11 +161,8 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
     );
   }
 
-  // Display one actual featured event at a time (increased height, clean navigation)
+  // Display one actual featured event at a time
   const currentEvent = events[currentIndex % events.length];
-  const imgSrc = failedImages[currentEvent._id]
-    ? DEFAULT_FALLBACK_IMAGE
-    : currentEvent.image || DEFAULT_FALLBACK_IMAGE;
 
   const handleView = () => {
     if (onViewEvent) {
@@ -153,20 +181,42 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
   return (
     <section
       aria-label="Featured Event Banner"
+      aria-roledescription="carousel"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onFocus={() => setIsHovered(true)}
+      onBlur={() => setIsHovered(false)}
       className="relative w-full overflow-hidden rounded-2xl border border-[var(--color-borders)] shadow-md bg-black group select-none"
     >
       <div className="relative w-full min-h-[220px] sm:min-h-[250px] md:min-h-[285px] flex items-center overflow-hidden">
-        {/* Event Background Image */}
-        <img
-          src={imgSrc}
-          alt={currentEvent.title}
-          onError={() => handleImageError(currentEvent._id)}
-          className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-102 transition-transform duration-700 pointer-events-none"
-        />
+        {/* Preloaded Background Images with Smooth Crossfade */}
+        {events.map((evt, idx) => {
+          const isActive = idx === currentIndex % events.length;
+          const src = failedImages[evt._id]
+            ? DEFAULT_FALLBACK_IMAGE
+            : evt.image || DEFAULT_FALLBACK_IMAGE;
+
+          return (
+            <div
+              key={evt._id || idx}
+              aria-hidden={!isActive}
+              className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
+                isActive ? 'opacity-100 z-0' : 'opacity-0 pointer-events-none z-[-1]'
+              }`}
+            >
+              <img
+                src={src}
+                alt={evt.title}
+                onError={() => handleImageError(evt._id)}
+                className="w-full h-full object-cover object-center group-hover:scale-102 transition-transform duration-700 pointer-events-none"
+              />
+            </div>
+          );
+        })}
 
         {/* Enhanced Contrast Gradient Overlays (ensures readable text in both light and dark themes) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-black/35 pointer-events-none" />
-        <div className="hidden sm:block absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-black/35 pointer-events-none z-[1]" />
+        <div className="hidden sm:block absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent pointer-events-none z-[1]" />
 
         {/* Top Badges & Controls */}
         <div className="absolute top-3.5 left-3.5 sm:top-4 sm:left-5 right-3.5 sm:right-5 flex items-center justify-between gap-2 z-10">
@@ -192,7 +242,7 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-xs text-white/90 px-1.5 font-mono font-bold">
-                {currentIndex + 1}/{events.length}
+                {(currentIndex % events.length) + 1}/{events.length}
               </span>
               <button
                 type="button"
@@ -206,8 +256,11 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
           )}
         </div>
 
-        {/* Banner Content & Actions */}
-        <div className="relative z-10 w-full p-4 sm:p-6 md:p-8 pt-14 sm:pt-16 space-y-3 max-w-3xl">
+        {/* Banner Content & Actions with Gentle Fade-In Transition on Slide Change */}
+        <div
+          key={currentEvent._id || currentIndex}
+          className="relative z-10 w-full p-4 sm:p-6 md:p-8 pt-14 sm:pt-16 space-y-3 max-w-3xl animate-fade-in"
+        >
           <div className="space-y-1">
             <h2 className="text-lg sm:text-2xl md:text-3xl font-extrabold font-serif text-white leading-tight drop-shadow-md line-clamp-1 sm:line-clamp-2">
               {currentEvent.title}
@@ -265,7 +318,7 @@ export default function FeaturedCarousel({ onSelectEvent, onExploreMore, onViewE
                 type="button"
                 onClick={() => setCurrentIndex(idx)}
                 aria-label={`Jump to featured event ${idx + 1}`}
-                className={`transition-all rounded-full cursor-pointer ${
+                className={`transition-all duration-300 rounded-full cursor-pointer ${
                   idx === currentIndex % events.length
                     ? 'w-5 h-1.5 bg-[var(--color-primary-action)] shadow-xs'
                     : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/70'
