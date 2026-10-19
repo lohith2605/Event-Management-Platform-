@@ -2,19 +2,11 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Session from '../models/Session.js';
 
-/**
- * Session timeout policy defaults (in milliseconds):
- * - Inactivity timeout: 30 minutes (1,800,000 ms)
- * - Absolute maximum lifetime: 8 hours (28,800,000 ms)
- * - Warning before expiry: 2 minutes (120,000 ms)
- */
-export const DEFAULT_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+export const DEFAULT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export const DEFAULT_ABSOLUTE_LIFETIME_MS = 8 * 60 * 60 * 1000; // 8 hours
 export const DEFAULT_WARNING_BEFORE_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
 
-/**
- * Read and validate configured session timeouts from environment variables
- */
+
 export const getInactivityTimeoutMs = () => {
   const val = parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_MS, 10);
   return Number.isFinite(val) && val > 0 ? val : DEFAULT_INACTIVITY_TIMEOUT_MS;
@@ -30,9 +22,7 @@ export const getWarningBeforeExpiryMs = () => {
   return Number.isFinite(val) && val > 0 ? val : DEFAULT_WARNING_BEFORE_EXPIRY_MS;
 };
 
-/**
- * Generate cryptographically secure random session identifier
- */
+
 export const generateSessionId = () => {
   return crypto.randomBytes(32).toString('hex');
 };
@@ -111,13 +101,13 @@ export const sendTokenResponse = async (user, statusCode, res, extraData = {}, r
     userAgent: req?.headers?.['user-agent'] || '',
   };
 
-  // 1. Create a dedicated session in MongoDB
+ 
   const session = await createSessionRecord(user._id, clientMeta);
 
-  // 2. Generate JWT bound to this specific session ID
+  
   const token = generateToken(user._id, user.role, session.sessionId);
 
-  // 3. Configure HTTP-only cookie aligned with absolute session lifetime
+  
   const options = {
     expires: session.absoluteExpiresAt,
     httpOnly: true,

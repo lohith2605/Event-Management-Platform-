@@ -5,17 +5,12 @@ import { createAndEmitNotification } from '../services/notificationService.js';
 
 export const CHECKOUT_HOLD_DURATION_MS = 10 * 60 * 1000; // 10 minutes
 
-/**
- * Checks if a booking's checkout hold has expired.
- */
+
 export const isBookingHoldExpired = (booking) => {
   if (!booking || !booking.holdExpiresAt) return false;
   return new Date(booking.holdExpiresAt).getTime() < Date.now();
 };
 
-/**
- * Releases inventory and cancels an individual expired booking.
- */
 export const releaseSingleBookingHold = async (booking, reason = 'Checkout hold expired (10-minute limit exceeded)') => {
   if (!booking || booking.status !== 'pending' || booking.paymentStatus !== 'pending') {
     return booking;
