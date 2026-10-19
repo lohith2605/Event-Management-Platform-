@@ -8,7 +8,10 @@ import Notification from '../models/Notification.js';
 import AuditLog from '../models/AuditLog.js';
 import Coupon from '../models/Coupon.js';
 import CouponRedemption from '../models/CouponRedemption.js';
-import { sendCancellationEmailForBooking } from '../services/emailService.js';
+import {
+  sendCancellationEmailForBooking,
+  sendApprovalEmailForEvent,
+} from '../services/emailService.js';
 import { processRazorpayRefund, fetchRazorpayRefund } from '../services/refundService.js';
 import { processEventReminders } from '../services/reminderScheduler.js';
 import {
@@ -504,8 +507,19 @@ export const reviewEvent = async (req, res, next) => {
     const previousStatus = event.status;
 
     if (action === 'approve') {
+      const isNewPublication = previousStatus !== 'published';
+
       event.status = 'published';
       event.rejectionReason = '';
+
+      if (isNewPublication) {
+        event.lastApprovalTransitionAt = new Date();
+        event.approvalEmailSent = false;
+        event.approvalEmailStatus = 'pending';
+        event.approvalEmailError = '';
+      }
+
+      await event.save();
 
       // Notify organizer and eligible attendees in real time via Socket.IO & MongoDB
       await notifyOrganizerEventApproved(event);
@@ -520,6 +534,15 @@ export const reviewEvent = async (req, res, next) => {
         targetTitle: event.title,
         details: `Approved event "${event.title}" from status '${previousStatus}' to 'published'.`,
       });
+
+      // Dispatch organizer publication email only for genuine new publication transitions
+      if (isNewPublication) {
+        try {
+          await sendApprovalEmailForEvent(event._id);
+        } catch (emailErr) {
+          console.error(`Failed to dispatch approval email for event ${event._id}:`, emailErr.message);
+        }
+      }
     } else if (action === 'reject') {
       if (!rejectionReason || !rejectionReason.trim()) {
         return res.status(400).json({
@@ -531,6 +554,7 @@ export const reviewEvent = async (req, res, next) => {
       const trimmedReason = rejectionReason.trim();
       event.status = 'rejected';
       event.rejectionReason = trimmedReason;
+      await event.save();
 
       // Notify organizer in real time via Socket.IO & MongoDB
       await notifyOrganizerEventRejected(event, trimmedReason);
@@ -556,6 +580,7 @@ export const reviewEvent = async (req, res, next) => {
       const trimmedFeedback = rejectionReason.trim();
       event.status = 'draft';
       event.rejectionReason = trimmedFeedback;
+      await event.save();
 
       // Notify organizer in real time via Socket.IO & MongoDB
       await createAndEmitNotification({
@@ -579,7 +604,7 @@ export const reviewEvent = async (req, res, next) => {
       });
     }
 
-    await event.save();
+    const updatedEvent = await Event.findById(id);
 
     res.status(200).json({
       success: true,
@@ -589,7 +614,7 @@ export const reviewEvent = async (req, res, next) => {
           : action === 'reject'
           ? 'Event has been rejected with the stated reason.'
           : 'Event has been returned to the organizer as a draft for corrections.',
-      event,
+      event: updatedEvent || event,
     });
   } catch (error) {
     next(error);

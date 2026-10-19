@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import Booking from '../models/Booking.js';
 import User from '../models/User.js';
 import Ticket from '../models/Ticket.js';
+import Event from '../models/Event.js';
 
 dotenv.config();
 
@@ -1104,6 +1105,369 @@ export const sendReminderEmailForBooking = async (arg1, arg2 = '24h') => {
   }
 };
 
+/**
+ * Safely escape HTML entities in dynamic user-provided strings
+ */
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+/**
+ * Send branded UTSAV Event Approval & Publication confirmation email to organizer
+ * @param {Object} params
+ * @param {Object} params.organizer - Registered User record of the organizer
+ * @param {Object} params.event - The published Event document
+ * @param {string} [params.publicEventUrl] - Explicit public event URL
+ * @returns {Promise<{ success: boolean, delivered: boolean, simulated?: boolean, messageId?: string }>}
+ */
+export const sendEventApprovalEmail = async ({ organizer, event, publicEventUrl }) => {
+  const recipient = organizer?.email;
+  if (!recipient || !recipient.trim()) {
+    throw new Error('Organizer registered email is required for publication notification.');
+  }
+
+  const recipientName = organizer?.name ? organizer.name.trim() : (event?.organizer || 'Valued Organizer');
+  const eventTitle = event?.title ? event.title.trim() : 'Your Event';
+  const eventDate = event?.date || 'Scheduled Date TBD';
+  const eventTime = event?.time || '';
+  const eventCategory = event?.category || 'Community';
+  const eventFormat = event?.format || 'In-Person';
+
+  const isOnline =
+    eventFormat === 'Online' ||
+    event?.city === 'Online' ||
+    (event?.venue && event.venue.toLowerCase().includes('online'));
+
+  const eventLocation = isOnline
+    ? 'Virtual / Online Event'
+    : `${event?.venue || 'Venue TBD'}, ${event?.city || ''}`;
+
+  // Ticketing and availability status messaging
+  const spotsLeft = typeof event?.spotsLeft === 'number' ? event.spotsLeft : event?.totalCapacity || 0;
+  const isExpired = event?.registrationDeadline && new Date() > new Date(event.registrationDeadline);
+  const isFull = spotsLeft <= 0;
+
+  let bookingAvailabilityNote = '';
+  let plainBookingNote = '';
+  if (isExpired) {
+    bookingAvailabilityNote = '<strong>Note:</strong> The registration deadline for this event has passed.';
+    plainBookingNote = 'Note: The registration deadline for this event has passed.';
+  } else if (isFull) {
+    bookingAvailabilityNote = '<strong>Capacity Status:</strong> Your event is currently at full capacity (0 spots remaining).';
+    plainBookingNote = 'Capacity Status: Your event is currently at full capacity (0 spots remaining).';
+  } else {
+    bookingAvailabilityNote = `Attendees can discover your event and book tickets, subject to its availability and booking settings (${spotsLeft} passes currently open).`;
+    plainBookingNote = `Attendees can discover your event and book tickets, subject to its availability and booking settings (${spotsLeft} passes currently open).`;
+  }
+
+  const subject = 'Your event has been approved and published!';
+
+  // Determine base public frontend URL
+  const frontendBaseUrl = (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
+  const finalPublicUrl = publicEventUrl || `${frontendBaseUrl}/events?q=${encodeURIComponent(eventTitle)}`;
+
+  const safeRecipientName = escapeHtml(recipientName);
+  const safeEventTitle = escapeHtml(eventTitle);
+  const safeEventDate = escapeHtml(eventDate);
+  const safeEventTime = escapeHtml(eventTime);
+  const safeEventLocation = escapeHtml(eventLocation);
+  const safeCategory = escapeHtml(eventCategory);
+  const safeFormat = escapeHtml(eventFormat);
+
+  const text = `Hello ${recipientName},\n\n` +
+    `Great news! Your event has been approved by the UTSAV admin team and is now published on UTSAV.\n\n` +
+    `${plainBookingNote}\n\n` +
+    `--- EVENT DETAILS ---\n` +
+    `Title: ${eventTitle}\n` +
+    `Category: ${eventCategory} (${eventFormat})\n` +
+    `Date & Time: ${eventDate}${eventTime ? ` at ${eventTime}` : ''}\n` +
+    `Location: ${eventLocation}\n` +
+    `Public Event Link: ${finalPublicUrl}\n\n` +
+    `You can view and manage your live event, monitor pass registrations, and review attendee lists anytime through your UTSAV Organizer Dashboard:\n` +
+    `${frontendBaseUrl}/organizer/dashboard?tab=my-events\n\n` +
+    `Thank you for creating unforgettable community experiences on UTSAV.\n\n` +
+    `Warm regards,\n` +
+    `The UTSAV Platform Team\n` +
+    `https://utsav-events.in`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Your Event is Approved &amp; Published!</title>
+      <style>
+        body { margin: 0; padding: 0; background-color: #FAF8F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #292722; }
+        .wrapper { width: 100%; table-layout: fixed; background-color: #FAF8F5; padding: 40px 16px; }
+        .main-card { max-width: 600px; margin: 0 auto; background-color: #FFFFFF; border: 1px solid #E7E2DA; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+        .header { background: linear-gradient(135deg, #10B981 0%, #059669 100%); padding: 32px 24px; text-align: center; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 800; letter-spacing: 0.5px; }
+        .header p { margin: 6px 0 0; color: rgba(255, 255, 255, 0.92); font-size: 13px; font-weight: 500; }
+        .content { padding: 36px 32px; }
+        .badge { display: inline-block; background-color: #D1FAE5; color: #065F46; font-size: 11px; font-weight: 800; padding: 4px 12px; border-radius: 9999px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+        .title { margin: 0 0 14px; font-size: 22px; font-weight: 800; color: #1C1917; line-height: 1.3; }
+        .lead { margin: 0 0 18px; font-size: 15px; line-height: 1.6; color: #44403C; }
+        .event-box { background-color: #FBF9F6; border: 1px solid #EAE5DD; border-radius: 14px; padding: 20px 24px; margin: 24px 0; }
+        .btn-container { text-align: center; margin: 32px 0 20px; }
+        .btn { display: inline-block; background-color: #D96342; color: #FFFFFF !important; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 2px 10px rgba(217, 99, 66, 0.28); }
+        .note-box { background-color: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 12px; padding: 14px 18px; margin: 20px 0; font-size: 13px; line-height: 1.5; color: #166534; }
+        .fallback-link { font-size: 12px; color: #78716C; line-height: 1.6; word-break: break-all; margin-top: 24px; padding-top: 20px; border-top: 1px solid #F5F2EB; }
+        .fallback-link a { color: #D96342; text-decoration: underline; }
+        .footer { padding: 24px 32px; background-color: #FAF8F5; border-top: 1px solid #E7E2DA; text-align: center; font-size: 11px; color: #A8A29E; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="main-card">
+          <div class="header">
+            <h1>UTSAV</h1>
+            <p>Smart Event Management Platform</p>
+          </div>
+          <div class="content">
+            <span class="badge">Live &amp; Published</span>
+            <h2 class="title">Your Event is Approved &amp; Live!</h2>
+            <p class="lead">Hello <strong>${safeRecipientName}</strong>,</p>
+            <p class="lead">
+              Great news! Your event has been approved by the UTSAV admin team and is now published on UTSAV. Attendees can discover your event and book tickets, subject to its availability and booking settings.
+            </p>
+            
+            <div class="note-box">
+              ${bookingAvailabilityNote}
+            </div>
+
+            <div class="event-box">
+              <div style="font-size:18px;font-weight:800;color:#1C1917;margin-bottom:14px;border-bottom:1px solid #EAE5DD;padding-bottom:10px;">
+                ${safeEventTitle}
+              </div>
+              <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                <tr>
+                  <td style="padding:6px 0;width:110px;font-weight:700;color:#78716C;">Category:</td>
+                  <td style="padding:6px 0;font-weight:600;color:#1C1917;">${safeCategory} (${safeFormat})</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-weight:700;color:#78716C;">Date &amp; Time:</td>
+                  <td style="padding:6px 0;font-weight:600;color:#1C1917;">${safeEventDate}${safeEventTime ? ` &bull; ${safeEventTime}` : ''}</td>
+                </tr>
+                <tr>
+                  <td style="padding:6px 0;font-weight:700;color:#78716C;">Venue:</td>
+                  <td style="padding:6px 0;font-weight:600;color:#1C1917;">${safeEventLocation}</td>
+                </tr>
+              </table>
+            </div>
+
+            <div class="btn-container">
+              <a href="${finalPublicUrl}" class="btn" target="_blank" rel="noopener noreferrer">
+                View Your Event
+              </a>
+            </div>
+
+            <div class="fallback-link">
+              Having trouble with the button? Copy and paste this URL into your browser:<br/>
+              <a href="${finalPublicUrl}" target="_blank" rel="noopener noreferrer">${finalPublicUrl}</a>
+            </div>
+          </div>
+          <div class="footer">
+            <p style="margin: 0 0 6px;">
+              You received this automated notification because you are the registered organizer for this event on UTSAV.<br/>
+              To monitor tickets, sales, or attendee check-ins, sign in to your UTSAV Organizer Dashboard.
+            </p>
+            <p style="margin: 0;">&copy; 2026 UTSAV Platform. India's Curated Event Discovery & Ticketing Platform.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendEmail({
+    to: recipient,
+    subject,
+    text,
+    html,
+  });
+};
+
+/**
+ * Idempotently coordinates organizer email dispatch for an approved event.
+ * Atomically locks delivery status to prevent concurrent duplicates, validates
+ * registered organizer identity, records durable delivery status, and gracefully
+ * handles SMTP delivery failures without reverting event publication.
+ *
+ * @param {string|mongoose.Types.ObjectId|Object} param - Event ID or event object
+ * @param {Object} [options]
+ * @param {boolean} [options.forceRetry=false] - When true, allows re-attempting failed deliveries
+ * @param {string} [options.publicEventUrl] - Optional custom public URL
+ * @returns {Promise<{ success: boolean, delivered?: boolean, skipped?: boolean, reason?: string, error?: string, messageId?: string }>}
+ */
+export const sendApprovalEmailForEvent = async (param, options = {}) => {
+  const eventId =
+    typeof param === 'object' && param !== null && !param._bsontype
+      ? param.eventId || param.id || param._id || param
+      : param;
+
+  if (!eventId) {
+    return { success: false, error: 'No event ID provided for approval notification.' };
+  }
+
+  const { forceRetry = false, publicEventUrl } = options;
+
+  try {
+    // 1. Fetch event to verify existence and published status
+    const existing = await Event.findById(eventId);
+    if (!existing) {
+      return { success: false, error: `Event not found: ${eventId}` };
+    }
+
+    if (existing.status !== 'published') {
+      return { success: true, skipped: true, reason: 'event_not_published' };
+    }
+
+    // 2. Idempotency Check:
+    // If already sent, skip unless forceRetry is true AND last transition is newer than sent timestamp
+    if (existing.approvalEmailSent === true && !forceRetry) {
+      return { success: true, skipped: true, reason: 'already_sent' };
+    }
+
+    // 3. Concurrency Lock: Atomically claim processing state
+    const query = {
+      _id: eventId,
+      status: 'published',
+      approvalEmailStatus: { $ne: 'processing' },
+    };
+
+    if (!forceRetry) {
+      query.approvalEmailSent = { $ne: true };
+    }
+
+    const claimed = await Event.findOneAndUpdate(
+      query,
+      {
+        $set: {
+          approvalEmailStatus: 'processing',
+          approvalEmailError: '',
+        },
+      },
+      { new: true }
+    );
+
+    if (!claimed) {
+      return { success: true, skipped: true, reason: 'concurrency_lock_or_already_processed' };
+    }
+
+    // 4. Retrieve Registered Organizer User Record
+    if (!claimed.organizerId) {
+      claimed.approvalEmailStatus = 'failed';
+      claimed.approvalEmailError = 'Event has no linked organizerId.';
+      claimed.approvalEmailAttempts = (claimed.approvalEmailAttempts || 0) + 1;
+      await claimed.save();
+      return { success: false, error: 'Event lacks organizerId.' };
+    }
+
+    const organizer = await User.findById(claimed.organizerId).select('name email role isSuspended');
+    if (!organizer || !organizer.email) {
+      claimed.approvalEmailStatus = 'failed';
+      claimed.approvalEmailError = 'Organizer account not found or has no registered email address.';
+      claimed.approvalEmailAttempts = (claimed.approvalEmailAttempts || 0) + 1;
+      await claimed.save();
+      console.warn(`⚠️ [Approval Email] Event ${claimed._id} publication succeeded, but organizer ${claimed.organizerId} lacks valid email.`);
+      return { success: false, error: 'Organizer lacks valid email.' };
+    }
+
+    // 5. Send Email via configured Nodemailer transport
+    let emailResult;
+    try {
+      emailResult = await sendEventApprovalEmail({
+        organizer,
+        event: claimed,
+        publicEventUrl,
+      });
+    } catch (sendErr) {
+      // Record failure durably on Event model without throwing or aborting publication
+      claimed.approvalEmailStatus = 'failed';
+      claimed.approvalEmailError = sendErr.message || 'SMTP delivery failure';
+      claimed.approvalEmailAttempts = (claimed.approvalEmailAttempts || 0) + 1;
+      await claimed.save();
+      console.error(`⚠️ [Approval Email Error] Failed delivery for event "${claimed.title}" to ${organizer.email}:`, sendErr.message);
+      return { success: false, error: sendErr.message, delivered: false };
+    }
+
+    // 6. Record successful delivery
+    claimed.approvalEmailSent = true;
+    claimed.approvalEmailSentAt = new Date();
+    claimed.approvalEmailStatus = 'sent';
+    claimed.approvalEmailRecipient = organizer.email;
+    claimed.approvalEmailMessageId =
+      emailResult?.messageId || (emailResult?.simulated ? 'SIMULATED' : 'DELIVERED');
+    claimed.approvalEmailError = '';
+    await claimed.save();
+
+    console.log(`✅ [Approval Email] Dispatched successfully for "${claimed.title}" to ${organizer.email} (Message ID: ${claimed.approvalEmailMessageId})`);
+    return {
+      success: true,
+      delivered: !!emailResult?.delivered,
+      simulated: !!emailResult?.simulated,
+      messageId: claimed.approvalEmailMessageId,
+    };
+  } catch (err) {
+    console.error(`⚠️ [Approval Email] Unexpected error processing event ${eventId}:`, err.message);
+    try {
+      await Event.findByIdAndUpdate(eventId, {
+        $set: {
+          approvalEmailStatus: 'failed',
+          approvalEmailError: err.message,
+        },
+        $inc: { approvalEmailAttempts: 1 },
+      });
+    } catch (saveErr) {
+      // ignore
+    }
+    return { success: false, error: err.message };
+  }
+};
+
+/**
+ * Retries failed approval emails safely with bounded attempts
+ * @param {Object} [options]
+ * @param {number} [options.limit=10]
+ * @returns {Promise<{ retried: number, succeeded: number, failed: number }>}
+ */
+export const retryFailedApprovalEmails = async ({ limit = 10 } = {}) => {
+  try {
+    const candidates = await Event.find({
+      status: 'published',
+      approvalEmailSent: { $ne: true },
+      approvalEmailStatus: { $in: ['failed', 'pending'] },
+      approvalEmailAttempts: { $lt: 3 },
+    })
+      .limit(limit)
+      .select('_id title organizerId');
+
+    let succeeded = 0;
+    let failed = 0;
+
+    for (const evt of candidates) {
+      const res = await sendApprovalEmailForEvent(evt._id, { forceRetry: true });
+      if (res.success && (res.delivered || res.simulated)) {
+        succeeded++;
+      } else {
+        failed++;
+      }
+    }
+
+    return { retried: candidates.length, succeeded, failed };
+  } catch (err) {
+    console.error('Error during retryFailedApprovalEmails:', err.message);
+    return { retried: 0, succeeded: 0, failed: 0, error: err.message };
+  }
+};
+
 export default {
   sendEmail,
   sendPasswordResetEmail,
@@ -1114,6 +1478,9 @@ export default {
   sendCancellationEmailForBooking,
   sendEventReminderEmail,
   sendReminderEmailForBooking,
+  sendEventApprovalEmail,
+  sendApprovalEmailForEvent,
+  retryFailedApprovalEmails,
   getTransporter,
   setTransporter,
 };

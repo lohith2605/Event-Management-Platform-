@@ -131,6 +131,43 @@ const EventSchema = new mongoose.Schema(
       min: 0,
       index: true,
     },
+    // Approval & Publication Email Delivery State
+    approvalEmailSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    approvalEmailSentAt: {
+      type: Date,
+    },
+    approvalEmailStatus: {
+      type: String,
+      enum: ['none', 'pending', 'processing', 'sent', 'failed'],
+      default: 'none',
+      index: true,
+    },
+    approvalEmailError: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    approvalEmailMessageId: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    approvalEmailRecipient: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    approvalEmailAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lastApprovalTransitionAt: {
+      type: Date,
+    },
   },
   {
     timestamps: true,
