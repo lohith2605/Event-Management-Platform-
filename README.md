@@ -152,10 +152,6 @@ npm --prefix frontend run lint
 - Event-specific chat authorization and private conversation access.
 - Input validation and rate limiting.
 
-## 📄 License
-
-This project is licensed under the [MIT License](LICENSE).
-
 ---
 
 **UTSAV — Discover events. Book experiences. Connect with organizers.**
