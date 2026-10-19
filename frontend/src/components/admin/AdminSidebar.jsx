@@ -10,12 +10,14 @@ import {
   Tag,
   ChevronLeft,
   X,
+  MessageSquare,
 } from 'lucide-react';
 import ThemeSwitcher from '../ThemeSwitcher';
 
 export const ADMIN_NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'events', label: 'Event Moderation', icon: ShieldCheck, badgeKey: 'pendingEvents' },
+  { id: 'chat', label: 'Organizer Direct Chat', icon: MessageSquare, badgeKey: 'unreadChats' },
   { id: 'users', label: 'User Governance', icon: Users, badgeKey: 'suspendedUsers' },
   { id: 'bookings', label: 'Bookings & Payments', icon: Receipt },
   { id: 'coupons', label: 'Coupons & Discounts', icon: Tag },

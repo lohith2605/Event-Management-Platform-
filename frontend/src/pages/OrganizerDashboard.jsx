@@ -19,9 +19,11 @@ import {
   ShieldCheck,
   RefreshCw,
   Tag,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useChat } from '../context/ChatContext';
 import {
   fetchOrganizerOverviewApi,
   fetchOrganizerEventsListApi,
@@ -41,6 +43,7 @@ import BookingsTab from '../components/organizer/BookingsTab';
 import AnalyticsTab from '../components/organizer/AnalyticsTab';
 import CouponsTab from '../components/organizer/CouponsTab';
 import ProfileSettingsTab from '../components/organizer/ProfileSettingsTab';
+import OrganizerChatTab from '../components/organizer/OrganizerChatTab';
 import EditEventModal from '../components/organizer/EditEventModal';
 import CancelEventModal from '../components/organizer/CancelEventModal';
 import ViewEventModal from '../components/organizer/ViewEventModal';
@@ -49,6 +52,7 @@ const NAV_ITEMS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'my-events', label: 'My Events', icon: Calendar },
   { id: 'create-event', label: 'Create Event', icon: PlusCircle },
+  { id: 'messages', label: 'Messages', icon: MessageSquare },
   { id: 'coupons', label: 'Coupons & Discounts', icon: Tag },
   { id: 'attendees', label: 'Attendees', icon: Users },
   { id: 'bookings', label: 'Bookings', icon: Ticket },
@@ -58,6 +62,7 @@ const NAV_ITEMS = [
 
 export default function OrganizerDashboard() {
   const { user, logout } = useAuth();
+  const { unreadChatCount } = useChat();
   const { theme, toggleTheme, toggleDarkMode, isDark } = useTheme();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -370,8 +375,16 @@ export default function OrganizerDashboard() {
                         : 'text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)]/60'
                     }`}
                   >
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[var(--color-primary-text)]' : ''}`} />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-3">
+                      <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-[var(--color-primary-text)]' : ''}`} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {item.id === 'messages' && unreadChatCount > 0 && (
+                      <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-black bg-white/20 text-white">
+                        {unreadChatCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -508,6 +521,10 @@ export default function OrganizerDashboard() {
                   isSubmitting={isSubmittingEvent}
                   onSuccess={() => handleTabChange('my-events')}
                 />
+              )}
+
+              {activeTab === 'messages' && (
+                <OrganizerChatTab events={events} />
               )}
 
               {activeTab === 'attendees' && (

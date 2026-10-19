@@ -14,7 +14,9 @@ import {
   CheckCircle2,
   Users,
   Ticket,
+  MessageSquare,
 } from 'lucide-react';
+import { useChat } from '../../context/ChatContext';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'All Events' },
@@ -39,6 +41,7 @@ export default function MyEventsTab({
   onNavigateTab,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const { startOrOpenConversation } = useChat();
 
   const getStatusBadge = (status) => {
     switch (status) {
@@ -302,6 +305,24 @@ export default function MyEventsTab({
                   </button>
 
                   <div className="flex items-center gap-2">
+                    {event.status === 'published' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          startOrOpenConversation({
+                            eventId: event._id,
+                            type: 'admin_organizer',
+                            autoOpenDrawer: true,
+                          });
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all cursor-pointer"
+                        title="Direct chat with platform admins regarding this event"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Admin Chat</span>
+                      </button>
+                    )}
+
                     {event.status !== 'cancelled' && (
                       <>
                         <button

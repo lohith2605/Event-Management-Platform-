@@ -35,9 +35,12 @@ import AdminReviewsTab from '../components/admin/AdminReviewsTab';
 import AdminAuditLogsTab from '../components/admin/AdminAuditLogsTab';
 import AdminNotificationsModal from '../components/admin/AdminNotificationsModal';
 import AdminCouponsTab from '../components/admin/AdminCouponsTab';
+import AdminChatTab from '../components/admin/AdminChatTab';
+import { useChat } from '../context/ChatContext';
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
+  const { unreadChatCount } = useChat();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const shouldReduceMotion = useReducedMotion();
@@ -608,6 +611,7 @@ export default function AdminDashboard() {
     suspendedUsers: stats?.users?.suspendedUsers ?? 0,
     flaggedReviews: stats?.reviews?.flaggedReviews ?? 0,
     unreadNotifs: unreadNotifsCount,
+    unreadChats: unreadChatCount,
   };
 
   return (
@@ -703,6 +707,10 @@ export default function AdminDashboard() {
                 onQuickApprove={handleQuickApprove}
                 onOpenRejectModal={(evt) => openEventDetails(evt._id)}
               />
+            )}
+
+            {activeTab === 'chat' && (
+              <AdminChatTab />
             )}
 
             {activeTab === 'users' && (

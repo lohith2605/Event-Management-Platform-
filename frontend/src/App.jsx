@@ -15,8 +15,10 @@ import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { SocketProvider } from './context/SocketContext.jsx';
+import { ChatProvider } from './context/ChatContext.jsx';
 import NotificationToastContainer from './components/NotificationToastContainer';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
+import ChatDrawer from './components/chat/ChatDrawer';
 import { Loader2 } from 'lucide-react';
 
 // Public Layout includes the full marketing and discovery footer
@@ -97,12 +99,15 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <SocketProvider>
-          <BrowserRouter>
-            {/* Global Real-Time In-App Notification Toast Popup */}
-            <NotificationToastContainer />
-            {/* Global Session Inactivity Warning Modal */}
-            <SessionTimeoutModal />
-            <Routes>
+          <ChatProvider>
+            <BrowserRouter>
+              {/* Global Real-Time In-App Notification Toast Popup */}
+              <NotificationToastContainer />
+              {/* Global Session Inactivity Warning Modal */}
+              <SessionTimeoutModal />
+              {/* Global Event Real-Time Chat Drawer */}
+              <ChatDrawer />
+              <Routes>
               {/* Root Route: Smart landing / attendee dashboard redirection */}
               <Route path="/" element={<RootRoute />} />
               <Route
@@ -230,6 +235,16 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/attendee/messages"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/attendee/*" element={<Navigate to="/attendee" replace />} />
 
               {/* Backward Compatibility & Legacy Dashboard Deep-Link Redirects */}
@@ -238,6 +253,7 @@ export default function App() {
               <Route path="/dashboard/bookings" element={<Navigate to="/attendee/bookings" replace />} />
               <Route path="/dashboard/tickets" element={<Navigate to="/attendee/tickets" replace />} />
               <Route path="/dashboard/notifications" element={<Navigate to="/attendee/notifications" replace />} />
+              <Route path="/dashboard/messages" element={<Navigate to="/attendee/messages" replace />} />
               <Route path="/dashboard/reviews" element={<Navigate to="/attendee/reviews" replace />} />
               <Route path="/dashboard/profile" element={<Navigate to="/attendee/profile" replace />} />
 
@@ -254,6 +270,8 @@ export default function App() {
               />
               <Route path="/organizer/events" element={<Navigate to="/organizer/dashboard?tab=my-events" replace />} />
               <Route path="/organizer/create-event" element={<Navigate to="/organizer/dashboard?tab=create-event" replace />} />
+              <Route path="/organizer/coupons" element={<Navigate to="/organizer/dashboard?tab=coupons" replace />} />
+              <Route path="/organizer/messages" element={<Navigate to="/organizer/dashboard?tab=messages" replace />} />
               <Route path="/organizer/bookings" element={<Navigate to="/organizer/dashboard?tab=bookings" replace />} />
               <Route path="/organizer/attendees" element={<Navigate to="/organizer/dashboard?tab=attendees" replace />} />
               <Route path="/organizer/analytics" element={<Navigate to="/organizer/dashboard?tab=analytics" replace />} />
@@ -271,6 +289,9 @@ export default function App() {
               <Route path="/admin/events" element={<Navigate to="/admin?tab=events" replace />} />
               <Route path="/admin/users" element={<Navigate to="/admin?tab=users" replace />} />
               <Route path="/admin/bookings" element={<Navigate to="/admin?tab=bookings" replace />} />
+              <Route path="/admin/coupons" element={<Navigate to="/admin?tab=coupons" replace />} />
+              <Route path="/admin/chat" element={<Navigate to="/admin?tab=chat" replace />} />
+              <Route path="/admin/messages" element={<Navigate to="/admin?tab=chat" replace />} />
               <Route path="/admin/reviews" element={<Navigate to="/admin?tab=reviews" replace />} />
               <Route path="/admin/audit-logs" element={<Navigate to="/admin?tab=audit-logs" replace />} />
               <Route path="/admin/notifications" element={<Navigate to="/admin?tab=notifications" replace />} />
@@ -280,8 +301,9 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </BrowserRouter>
-        </SocketProvider>
-      </AuthProvider>
-    </ThemeProvider>
-  );
+        </ChatProvider>
+      </SocketProvider>
+    </AuthProvider>
+  </ThemeProvider>
+);
 }

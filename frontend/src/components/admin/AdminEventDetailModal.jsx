@@ -16,7 +16,9 @@ import {
   CheckCircle,
   XCircle,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react';
+import { useChat } from '../../context/ChatContext';
 
 export default function AdminEventDetailModal({
   event,
@@ -32,6 +34,7 @@ export default function AdminEventDetailModal({
   const [returnMode, setReturnMode] = useState(false);
   const [reasonText, setReasonText] = useState('');
   const [validationError, setValidationError] = useState('');
+  const { startOrOpenConversation } = useChat();
 
   if (!isOpen || !event) return null;
 
@@ -367,39 +370,62 @@ export default function AdminEventDetailModal({
 
             {!rejectMode && !returnMode && (
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReasonText('');
-                    setValidationError('');
-                    setReturnMode(true);
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition-colors cursor-pointer"
-                >
-                  Return for Corrections
-                </button>
+                {event.status === 'published' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      startOrOpenConversation({
+                        eventId: event._id,
+                        type: 'admin_organizer',
+                        autoOpenDrawer: true,
+                      });
+                    }}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Direct chat with event organizer"
+                  >
+                    <MessageSquare className="w-4 h-4" />
+                    <span>Organizer Chat</span>
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReasonText('');
-                    setValidationError('');
-                    setRejectMode(true);
-                  }}
-                  className="px-3.5 py-2 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition-colors cursor-pointer"
-                >
-                  Reject Event
-                </button>
+                {event.status !== 'published' && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReasonText('');
+                        setValidationError('');
+                        setReturnMode(true);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition-colors cursor-pointer"
+                    >
+                      Return for Corrections
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={isProcessing}
-                  className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span>{isProcessing ? 'Approving...' : 'Approve & Publish'}</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReasonText('');
+                        setValidationError('');
+                        setRejectMode(true);
+                      }}
+                      className="px-3.5 py-2 rounded-xl text-xs font-bold text-red-600 dark:text-red-400 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 transition-colors cursor-pointer"
+                    >
+                      Reject Event
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleApprove}
+                      disabled={isProcessing}
+                      className="px-4 py-2 rounded-xl text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                    >
+                      <CheckCircle className="w-4 h-4" />
+                      <span>{isProcessing ? 'Approving...' : 'Approve & Publish'}</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>

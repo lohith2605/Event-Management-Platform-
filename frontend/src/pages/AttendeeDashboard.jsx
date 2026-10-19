@@ -22,9 +22,11 @@ import {
   Clock,
   Loader2,
   Flame,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { useChat } from '../context/ChatContext';
 import EventCard from '../components/EventCard';
 import BookingModal from '../components/BookingModal';
 import TicketPassModal from '../components/TicketPassModal';
@@ -34,6 +36,10 @@ import FeaturedCarousel from '../components/FeaturedCarousel';
 import Footer from '../components/Footer';
 import TwoFactorSettings from '../components/TwoFactorSettings';
 import ActiveSessionsCard from '../components/ActiveSessionsCard';
+import ConversationList from '../components/chat/ConversationList';
+import ConversationHeader from '../components/chat/ConversationHeader';
+import MessageTimeline from '../components/chat/MessageTimeline';
+import MessageComposer from '../components/chat/MessageComposer';
 import {
   fetchAttendeeStatsApi,
   fetchMyBookingsApi,
@@ -61,10 +67,29 @@ export default function AttendeeDashboard() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const {
+    conversations,
+    loadingConversations,
+    activeConversation,
+    openConversation,
+    messages,
+    loadingMessages,
+    loadingMoreMessages,
+    hasMoreMessages,
+    loadOlderMessages,
+    sendMessage,
+    sendTyping,
+    typingUsers,
+    chatError,
+    isConnected,
+    startOrOpenConversation,
+  } = useChat();
+
   // Map route URL path to active dashboard tab
   const getActiveTab = (pathname) => {
     if (pathname.startsWith('/attendee/bookings')) return 'bookings';
     if (pathname.startsWith('/attendee/tickets')) return 'tickets';
+    if (pathname.startsWith('/attendee/messages')) return 'messages';
     if (pathname.startsWith('/attendee/notifications')) return 'notifications';
     if (pathname.startsWith('/attendee/reviews')) return 'reviews';
     if (pathname.startsWith('/attendee/profile')) return 'profile';
@@ -78,6 +103,7 @@ export default function AttendeeDashboard() {
       discovery: '/attendee',
       bookings: '/attendee/bookings',
       tickets: '/attendee/tickets',
+      messages: '/attendee/messages',
       notifications: '/attendee/notifications',
       reviews: '/attendee/reviews',
       profile: '/attendee/profile',
@@ -1684,6 +1710,23 @@ export default function AttendeeDashboard() {
                         >
                           View Receipt
                         </button>
+                        {isConfirmed && b.paymentStatus !== 'failed' && b.paymentStatus !== 'refunded' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startOrOpenConversation({
+                                eventId: evt._id || b.eventId,
+                                type: 'attendee_organizer',
+                                autoOpenDrawer: true,
+                              });
+                            }}
+                            className="px-3 py-2 rounded-xl bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-xs font-bold text-[var(--color-primary-action)] transition-colors cursor-pointer flex items-center gap-1.5"
+                            title="Direct chat with event organizer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span>Contact Organizer</span>
+                          </button>
+                        )}
                         {isConfirmed && (
                           <button
                             type="button"
@@ -2342,6 +2385,99 @@ export default function AttendeeDashboard() {
                       Logged in as <strong>Attendee</strong>. Keep your account details up to date for smooth event entry.
                     </span>
                   </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ================= TAB 7: EVENT MESSAGES ================= */}
+        {activeTab === 'messages' && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between pb-1">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/attendee')}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer mb-1"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Discover Events</span>
+                </button>
+                <h2 className="text-2xl font-extrabold font-serif text-[var(--color-main-text)]">
+                  Event Messages & Inquiries
+                </h2>
+                <p className="text-xs text-[var(--color-secondary-text)]">
+                  Direct real-time conversations with organizers of your booked events
+                </p>
+              </div>
+            </div>
+
+            {/* Split-Pane Chat Interface */}
+            <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl shadow-xs overflow-hidden h-[750px] max-h-[80vh] flex flex-col">
+              <div className="flex-1 min-h-0 flex overflow-hidden">
+                {/* Left: Conversation list */}
+                <div
+                  className={`w-full md:w-80 lg:w-96 border-r border-[var(--color-borders)] flex flex-col shrink-0 ${
+                    activeConversation ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  <ConversationList
+                    conversations={conversations}
+                    activeConversationId={activeConversation?._id}
+                    onSelectConversation={(conv) => openConversation(conv, { autoOpenDrawer: false })}
+                    loading={loadingConversations}
+                  />
+                </div>
+
+                {/* Right: Active Chat */}
+                <div
+                  className={`flex-1 flex flex-col bg-[var(--color-primary-bg)]/20 ${
+                    !activeConversation ? 'hidden md:flex' : 'flex'
+                  }`}
+                >
+                  {activeConversation ? (
+                    <>
+                      <ConversationHeader
+                        conversation={activeConversation}
+                        showBackButton={true}
+                        onBack={() => openConversation(null, { autoOpenDrawer: false })}
+                        isConnected={isConnected}
+                      />
+                      <MessageTimeline
+                        messages={messages}
+                        loading={loadingMessages}
+                        loadingMore={loadingMoreMessages}
+                        hasMore={hasMoreMessages}
+                        onLoadMore={loadOlderMessages}
+                        typingUsers={typingUsers}
+                        error={chatError}
+                        onRetry={() => openConversation(activeConversation._id)}
+                        otherParticipantId={activeConversation.organizerId?._id || activeConversation.organizerId}
+                      />
+                      <MessageComposer
+                        onSendMessage={sendMessage}
+                        onTyping={sendTyping}
+                        disabled={loadingMessages}
+                      />
+                    </>
+                  ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2">
+                      <div className="w-16 h-16 rounded-3xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] flex items-center justify-center text-[var(--color-primary-action)] shadow-xs mb-1">
+                        <MessageSquare className="w-8 h-8" />
+                      </div>
+                      <h3 className="font-extrabold text-base text-[var(--color-main-text)] font-serif">
+                        Select an Event Conversation
+                      </h3>
+                      <p className="text-xs max-w-sm">
+                        Choose a conversation on the left, or click &quot;Contact Organizer&quot; on any of your confirmed bookings to send a direct message.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

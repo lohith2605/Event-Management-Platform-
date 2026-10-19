@@ -15,7 +15,9 @@ import {
   ChevronRight,
   Sparkles,
   Undo2,
+  MessageSquare,
 } from 'lucide-react';
+import { useChat } from '../../context/ChatContext';
 
 const STATUS_TABS = [
   { id: 'all', label: 'All Events' },
@@ -48,6 +50,7 @@ export default function AdminEventsTab({
   onQuickApprove,
   onOpenRejectModal,
 }) {
+  const { startOrOpenConversation } = useChat();
   const [localSearch, setLocalSearch] = useState(searchQuery);
 
   const handleSearchSubmit = (e) => {
@@ -370,6 +373,24 @@ export default function AdminEventsTab({
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
+
+                        {evt.status === 'published' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startOrOpenConversation({
+                                eventId: evt._id,
+                                type: 'admin_organizer',
+                                autoOpenDrawer: true,
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold text-purple-600 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-colors cursor-pointer"
+                            title="Direct chat with event organizer"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                            <span className="hidden xl:inline">Organizer Chat</span>
+                          </button>
+                        )}
 
                         {evt.status === 'pending' && (
                           <>

@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   MapPin,
   ChevronDown,
+  MessageSquare,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
 import { CITIES } from '../config/taxonomy';
@@ -23,11 +24,13 @@ import AttendeeMenuDrawer from './AttendeeMenuDrawer';
 import NotificationDropdown from './NotificationDropdown';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { useChat } from '../context/ChatContext';
 
 export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [attendeeDrawerOpen, setAttendeeDrawerOpen] = useState(false);
   const { unreadCount } = useSocket();
+  const { unreadChatCount, setIsChatDrawerOpen } = useChat();
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -376,6 +379,22 @@ export default function Navbar() {
             {isAuthenticated ? (
               role === 'attendee' ? (
                 <div className="flex items-center gap-2 pl-1">
+                  {/* Event Real-Time Chat Drawer Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsChatDrawerOpen(true)}
+                    className="relative p-2 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
+                    title="Event Messages & Chat"
+                    aria-label="Event Messages & Chat"
+                  >
+                    <MessageSquare className="w-5 h-5" />
+                    {unreadChatCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.2 min-w-4.5 h-4.5 bg-[var(--color-primary-action)] text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs">
+                        {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Dedicated Real-Time In-App Notification Bell & Popover */}
                   <NotificationDropdown />
 
@@ -403,6 +422,22 @@ export default function Navbar() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 pl-1">
+                  {/* Event Real-Time Chat Drawer Toggle for Organizers & Admins */}
+                  <button
+                    type="button"
+                    onClick={() => setIsChatDrawerOpen(true)}
+                    className="relative p-2 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
+                    title="Event Messages & Chat"
+                    aria-label="Event Messages & Chat"
+                  >
+                    <MessageSquare className="w-5 h-5" />
+                    {unreadChatCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 px-1.5 py-0.2 min-w-4.5 h-4.5 bg-[var(--color-primary-action)] text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-xs">
+                        {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Real-time notifications for Organizers & Admins too */}
                   <NotificationDropdown />
 

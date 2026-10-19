@@ -9,10 +9,13 @@ import {
   Loader2,
   CheckCircle,
   FileText,
+  MessageSquare,
 } from 'lucide-react';
 import { cancelBookingApi } from '../api/attendee';
+import { useChat } from '../context/ChatContext';
 
 export default function BookingDetailsModal({ booking, onClose, onBookingUpdated }) {
+  const { startOrOpenConversation } = useChat();
   const [cancelling, setCancelling] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -23,6 +26,18 @@ export default function BookingDetailsModal({ booking, onClose, onBookingUpdated
   const event = booking.eventId || {};
   const isCancelled = booking.status === 'cancelled';
   const isConfirmed = booking.status === 'confirmed';
+
+  const handleContactOrganizer = () => {
+    const eventId = event._id || booking.eventId?._id || booking.eventId;
+    if (eventId) {
+      onClose();
+      startOrOpenConversation({
+        eventId,
+        type: 'attendee_organizer',
+        autoOpenDrawer: true,
+      });
+    }
+  };
 
   const handleCancelBooking = async () => {
     setCancelling(true);
@@ -214,7 +229,18 @@ export default function BookingDetailsModal({ booking, onClose, onBookingUpdated
               </p>
             </div>
           ) : isConfirmed ? (
-            <div>
+            <div className="space-y-3">
+              {/* Qualifying Booking: Contact Event Organizer Action */}
+              {booking.paymentStatus !== 'failed' && booking.paymentStatus !== 'refunded' && booking.refundStatus !== 'processed' && (
+                <button
+                  type="button"
+                  onClick={handleContactOrganizer}
+                  className="w-full py-2.5 px-3 rounded-xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-white font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Contact Event Organizer</span>
+                </button>
+              )}
               {showCancelConfirm ? (
                 <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/5 space-y-3 animate-fade-in text-xs">
                   <div className="flex items-center gap-2 text-red-600 dark:text-red-400 font-bold">

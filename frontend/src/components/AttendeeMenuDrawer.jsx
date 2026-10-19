@@ -12,12 +12,15 @@ import {
   LogOut,
   ChevronRight,
   ShieldCheck,
+  MessageSquare,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
+import { useChat } from '../context/ChatContext';
 
 export default function AttendeeMenuDrawer({ isOpen, onClose, user, unreadCount = 0, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const { unreadChatCount } = useChat();
 
   // Close drawer on Escape key press
   useEffect(() => {
@@ -65,6 +68,14 @@ export default function AttendeeMenuDrawer({ isOpen, onClose, user, unreadCount 
       path: '/attendee/tickets',
       icon: Sparkles,
       description: 'Digital passes & entry QR codes',
+    },
+    {
+      id: 'messages',
+      label: 'Event Messages',
+      path: '/attendee/messages',
+      icon: MessageSquare,
+      badge: unreadChatCount,
+      description: 'Direct inquiries with event organizers',
     },
     {
       id: 'notifications',
