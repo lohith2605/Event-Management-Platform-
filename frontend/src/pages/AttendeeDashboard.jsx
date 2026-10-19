@@ -72,6 +72,7 @@ export default function AttendeeDashboard() {
     loadingConversations,
     activeConversation,
     openConversation,
+    leaveConversation,
     messages,
     loadingMessages,
     loadingMoreMessages,
@@ -2445,7 +2446,7 @@ export default function AttendeeDashboard() {
                       <ConversationHeader
                         conversation={activeConversation}
                         showBackButton={true}
-                        onBack={() => openConversation(null, { autoOpenDrawer: false })}
+                        onBack={leaveConversation}
                         isConnected={isConnected}
                       />
                       <MessageTimeline

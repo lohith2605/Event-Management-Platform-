@@ -12,6 +12,7 @@ export default function OrganizerChatTab({ events = [] }) {
     loadingConversations,
     activeConversation,
     openConversation,
+    leaveConversation,
     messages,
     loadingMessages,
     loadingMoreMessages,
@@ -112,7 +113,7 @@ export default function OrganizerChatTab({ events = [] }) {
               <ConversationHeader
                 conversation={activeConversation}
                 showBackButton={true}
-                onBack={() => openConversation(null, { autoOpenDrawer: false })}
+                onBack={leaveConversation}
                 isConnected={isConnected}
               />
 

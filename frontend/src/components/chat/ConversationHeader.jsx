@@ -6,7 +6,7 @@ export default function ConversationHeader({
   onBack,
   onClose,
   isConnected = true,
-  showBackButton = false,
+  showBackButton = true,
 }) {
   const { user } = useAuth();
   if (!conversation) return null;
@@ -62,7 +62,7 @@ export default function ConversationHeader({
   return (
     <div className="p-3.5 sm:p-4 border-b border-[var(--color-borders)] bg-[var(--color-card-bg)] flex items-center justify-between gap-3 shrink-0">
       <div className="flex items-center gap-3 min-w-0">
-        {showBackButton && (
+        {showBackButton && onBack && (
           <button
             type="button"
             onClick={onBack}

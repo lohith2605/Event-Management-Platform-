@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, X, ArrowLeft } from 'lucide-react';
+import { MessageSquare, X } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import ConversationHeader from './ConversationHeader';
 import MessageTimeline from './MessageTimeline';
@@ -13,6 +13,7 @@ export default function ChatDrawer() {
     setIsChatDrawerOpen,
     activeConversation,
     openConversation,
+    leaveConversation,
     conversations,
     loadingConversations,
     messages,
@@ -78,8 +79,8 @@ export default function ChatDrawer() {
           <>
             <ConversationHeader
               conversation={activeConversation}
-              showBackButton={conversations.length > 1}
-              onBack={() => openConversation(null, { autoOpenDrawer: true })}
+              showBackButton={true}
+              onBack={leaveConversation}
               onClose={() => setIsChatDrawerOpen(false)}
               isConnected={isConnected}
             />

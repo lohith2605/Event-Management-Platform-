@@ -113,6 +113,19 @@ export function ChatProvider({ children }) {
       setChatError(null);
       setTypingUsers(new Map());
 
+      // If passing null/undefined/falsy, deselect active conversation (leave room and clear thread)
+      if (!conversationOrId) {
+        if (activeConversationRef.current && socket && socket.connected) {
+          socket.emit('leave_conversation', {
+            conversationId: activeConversationRef.current._id,
+          });
+        }
+        setActiveConversation(null);
+        setMessages([]);
+        setLoadingMessages(false);
+        return;
+      }
+
       let conv = null;
       let convId = null;
 
@@ -230,6 +243,20 @@ export function ChatProvider({ children }) {
     setMessages([]);
     setTypingUsers(new Map());
     setChatError(null);
+  }, [socket]);
+
+  // Leave / deselect active conversation (returns to inbox without closing drawer)
+  const leaveConversation = useCallback(() => {
+    if (activeConversationRef.current && socket && socket.connected) {
+      socket.emit('leave_conversation', {
+        conversationId: activeConversationRef.current._id,
+      });
+    }
+    setActiveConversation(null);
+    setMessages([]);
+    setTypingUsers(new Map());
+    setChatError(null);
+    setLoadingMessages(false);
   }, [socket]);
 
   // 6. Load older messages (pagination)
@@ -546,6 +573,7 @@ export function ChatProvider({ children }) {
     chatError,
     refreshConversations,
     openConversation,
+    leaveConversation,
     startOrOpenConversation,
     closeChat,
     loadOlderMessages,

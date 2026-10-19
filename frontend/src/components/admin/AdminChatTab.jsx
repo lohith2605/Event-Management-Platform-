@@ -12,6 +12,7 @@ export default function AdminChatTab() {
     loadingConversations,
     activeConversation,
     openConversation,
+    leaveConversation,
     messages,
     loadingMessages,
     loadingMoreMessages,
@@ -89,7 +90,7 @@ export default function AdminChatTab() {
               <ConversationHeader
                 conversation={activeConversation}
                 showBackButton={true}
-                onBack={() => openConversation(null, { autoOpenDrawer: false })}
+                onBack={leaveConversation}
                 isConnected={isConnected}
               />
 
