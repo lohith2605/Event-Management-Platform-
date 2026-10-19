@@ -12,6 +12,7 @@ import User from '../src/models/User.js';
 import Event from '../src/models/Event.js';
 import Booking from '../src/models/Booking.js';
 import Ticket from '../src/models/Ticket.js';
+import Session from '../src/models/Session.js';
 import {
   sendCancellationEmail,
   sendCancellationEmailForBooking,
@@ -22,9 +23,16 @@ import { issueTicketsForBooking } from '../src/utils/ticketIssuer.js';
 
 const BASE_URL = 'http://127.0.0.1:5000';
 
-function generateAuthToken(user) {
+async function generateAuthToken(user) {
+  const sessionId = crypto.randomBytes(32).toString('hex');
+  await Session.create({
+    userId: user._id,
+    sessionId,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+    absoluteExpiresAt: new Date(Date.now() + 8 * 3600 * 1000),
+  });
   return jwt.sign(
-    { id: user._id, role: user.role },
+    { id: user._id, role: user.role, sessionId },
     process.env.JWT_SECRET || 'utsav_super_secure_jwt_secret_key_2026_events_platform',
     { expiresIn: '1h' }
   );
@@ -84,10 +92,10 @@ async function runCancellationRefundTests() {
       role: 'attendee',
     });
 
-    const adminToken = generateAuthToken(adminUser);
-    const organizerToken = generateAuthToken(organizer);
-    const attendeeAToken = generateAuthToken(attendeeA);
-    const attendeeBToken = generateAuthToken(attendeeB);
+    const adminToken = await generateAuthToken(adminUser);
+    const organizerToken = await generateAuthToken(organizer);
+    const attendeeAToken = await generateAuthToken(attendeeA);
+    const attendeeBToken = await generateAuthToken(attendeeB);
 
     console.log(`   - Admin: ${adminUser.email}`);
     console.log(`   - Attendee A (Recipient): ${attendeeA.email}`);

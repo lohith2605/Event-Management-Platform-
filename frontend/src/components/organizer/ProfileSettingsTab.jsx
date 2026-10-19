@@ -5,17 +5,22 @@ import {
   Phone,
   MapPin,
   Lock,
+  Shield,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Save,
   KeyRound,
+  Loader2,
 } from 'lucide-react';
 import {
   fetchOrganizerProfileApi,
   updateOrganizerProfileApi,
   updateOrganizerPasswordApi,
 } from '../../api/organizer';
+import { toggle2FAApi } from '../../api/auth';
+import TwoFactorSettings from '../TwoFactorSettings';
+import ActiveSessionsCard from '../ActiveSessionsCard';
 
 export default function ProfileSettingsTab({ user, onProfileUpdated }) {
   const [profileData, setProfileData] = useState({
@@ -31,6 +36,13 @@ export default function ProfileSettingsTab({ user, onProfileUpdated }) {
     newPassword: '',
     confirmPassword: '',
   });
+
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(Boolean(user?.twoFactorEnabled));
+  const [saving2FA, setSaving2FA] = useState(false);
+  const [twoFactorSuccess, setTwoFactorSuccess] = useState(null);
+  const [twoFactorError, setTwoFactorError] = useState(null);
+  const [show2FAConfirm, setShow2FAConfirm] = useState(false);
+  const [twoFactorPassword, setTwoFactorPassword] = useState('');
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
@@ -50,7 +62,10 @@ export default function ProfileSettingsTab({ user, onProfileUpdated }) {
             phone: res.user.phone || '',
             city: res.user.city || '',
             bio: res.user.bio || '',
+            twoFactorMethod: res.user.twoFactorMethod || 'email',
+            totpEnrolled: Boolean(res.user.totpEnrolled),
           });
+          setTwoFactorEnabled(Boolean(res.user.twoFactorEnabled));
         }
       } catch (e) {
         // use session defaults
@@ -114,6 +129,35 @@ export default function ProfileSettingsTab({ user, onProfileUpdated }) {
       setPasswordError(err.message || 'Failed to update password. Verify current password.');
     } finally {
       setSavingPassword(false);
+    }
+  };
+
+  const handleToggle2FA = async (e) => {
+    e.preventDefault();
+    setSaving2FA(true);
+    setTwoFactorSuccess(null);
+    setTwoFactorError(null);
+    try {
+      const targetState = !twoFactorEnabled;
+      const res = await toggle2FAApi({
+        enabled: targetState,
+        currentPassword: twoFactorPassword,
+      });
+      if (res && res.success) {
+        setTwoFactorEnabled(res.twoFactorEnabled);
+        setTwoFactorSuccess(`Two-factor authentication has been ${res.twoFactorEnabled ? 'enabled' : 'disabled'}.`);
+        setShow2FAConfirm(false);
+        setTwoFactorPassword('');
+        if (onProfileUpdated && res.user) {
+          onProfileUpdated(res.user);
+        }
+      } else {
+        setTwoFactorError(res?.message || 'Failed to update 2FA.');
+      }
+    } catch (err) {
+      setTwoFactorError(err.message || 'Failed to update 2FA. Verify current password.');
+    } finally {
+      setSaving2FA(false);
     }
   };
 
@@ -244,79 +288,103 @@ export default function ProfileSettingsTab({ user, onProfileUpdated }) {
           </form>
         </div>
 
-        {/* Change Password Form */}
-        <div className="rounded-2xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] p-6 space-y-4 shadow-xs">
-          <h3 className="text-sm font-extrabold uppercase tracking-wider text-[var(--color-secondary-text)] flex items-center gap-2">
-            <Lock className="w-4 h-4 text-[var(--color-golden-accent)]" />
-            <span>Security & Password</span>
-          </h3>
+        {/* Security & 2FA Column */}
+        <div className="space-y-6">
+          {/* Two-Factor Authentication Card */}
+          <TwoFactorSettings
+            user={{
+              ...user,
+              ...profileData,
+              twoFactorEnabled,
+            }}
+            onUserUpdated={(updates) => {
+              if (updates.twoFactorEnabled !== undefined) {
+                setTwoFactorEnabled(updates.twoFactorEnabled);
+              }
+              setProfileData((prev) => ({ ...prev, ...updates }));
+              if (onProfileUpdated) {
+                onProfileUpdated(updates);
+              }
+            }}
+          />
 
-          {passwordSuccess && (
-            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              <span>{passwordSuccess}</span>
-            </div>
-          )}
+          {/* Active Security Sessions */}
+          <ActiveSessionsCard />
 
-          {passwordError && (
-            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{passwordError}</span>
-            </div>
-          )}
+          {/* Change Password Form */}
+          <div className="rounded-2xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] p-6 space-y-4 shadow-xs">
+            <h3 className="text-sm font-extrabold uppercase tracking-wider text-[var(--color-secondary-text)] flex items-center gap-2">
+              <Lock className="w-4 h-4 text-[var(--color-golden-accent)]" />
+              <span>Change Password</span>
+            </h3>
 
-          <form onSubmit={handlePasswordSubmit} className="space-y-3.5 text-xs">
-            <div>
-              <label className="block font-bold text-[var(--color-main-text)] mb-1">
-                Current Password
-              </label>
-              <input
-                type="password"
-                value={passwordData.currentPassword}
-                onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
-                required
-              />
-            </div>
+            {passwordSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                <span>{passwordSuccess}</span>
+              </div>
+            )}
 
-            <div>
-              <label className="block font-bold text-[var(--color-main-text)] mb-1">
-                New Password (minimum 6 characters)
-              </label>
-              <input
-                type="password"
-                value={passwordData.newPassword}
-                onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
-                required
-              />
-            </div>
+            {passwordError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-600 dark:text-red-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{passwordError}</span>
+              </div>
+            )}
 
-            <div>
-              <label className="block font-bold text-[var(--color-main-text)] mb-1">
-                Confirm New Password
-              </label>
-              <input
-                type="password"
-                value={passwordData.confirmPassword}
-                onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
-                placeholder="••••••••"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
-                required
-              />
-            </div>
+            <form onSubmit={handlePasswordSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-bold text-[var(--color-main-text)] mb-1">
+                  Current Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordData.currentPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, currentPassword: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
+                  required
+                />
+              </div>
 
-            <button
-              type="submit"
-              disabled={savingPassword}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--color-card-bg)] text-[var(--color-main-text)] font-bold text-xs hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer disabled:opacity-60"
-            >
-              <KeyRound className="w-4 h-4 text-[var(--color-golden-accent)]" />
-              <span>{savingPassword ? 'Updating...' : 'Update Password'}</span>
-            </button>
-          </form>
+              <div>
+                <label className="block font-bold text-[var(--color-main-text)] mb-1">
+                  New Password (minimum 6 characters)
+                </label>
+                <input
+                  type="password"
+                  value={passwordData.newPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-[var(--color-main-text)] mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={passwordData.confirmPassword}
+                  onChange={(e) => setPasswordData({ ...passwordData, confirmPassword: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[var(--color-input-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] focus:outline-none focus:border-[var(--color-primary-action)] transition-colors"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={savingPassword}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--color-card-bg)] text-[var(--color-main-text)] font-bold text-xs hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer disabled:opacity-60"
+              >
+                <KeyRound className="w-4 h-4 text-[var(--color-golden-accent)]" />
+                <span>{savingPassword ? 'Updating...' : 'Update Password'}</span>
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

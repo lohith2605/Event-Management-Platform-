@@ -189,6 +189,88 @@ export const sendPasswordResetEmail = async ({ email, resetUrl, userName }) => {
 };
 
 /**
+ * Send a branded UTSAV Two-Factor Authentication (2FA) verification email
+ * @param {Object} params
+ * @param {string} params.email Recipient email address
+ * @param {string} params.otp Six-digit numerical code
+ * @param {string} [params.userName] User's name if available
+ * @returns {Promise<Object>} Delivery result
+ */
+export const send2FAVerificationEmail = async ({ email, otp, userName }) => {
+  const recipientName = userName ? userName.trim() : 'Valued Member';
+  const subject = `UTSAV — Sign-In Verification Code: ${otp}`;
+
+  const text = `Hello ${recipientName},\n\nYour one-time sign-in verification code for your UTSAV account (${email}) is:\n\n${otp}\n\nThis code will expire in 5 minutes.\n\nNever share this verification code with anyone. UTSAV staff will never ask for your code.\n\nIf you did not attempt to sign in to your UTSAV account, someone may know your password. Please log in and change your password immediately.\n\nWarm regards,\nThe UTSAV Security Team`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>UTSAV Verification Code</title>
+      <style>
+        body { margin: 0; padding: 0; background-color: #FAF8F5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #292722; }
+        .wrapper { width: 100%; table-layout: fixed; background-color: #FAF8F5; padding: 40px 16px; }
+        .main-card { max-width: 560px; margin: 0 auto; background-color: #FFFFFF; border: 1px solid #E7E2DA; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); }
+        .header { background: linear-gradient(135deg, #D96342 0%, #B84728 100%); padding: 32px 24px; text-align: center; }
+        .header h1 { margin: 0; color: #FFFFFF; font-size: 24px; font-weight: 800; letter-spacing: 0.5px; }
+        .header p { margin: 6px 0 0; color: rgba(255, 255, 255, 0.9); font-size: 13px; font-weight: 500; }
+        .content { padding: 36px 32px; }
+        .title { margin: 0 0 16px; font-size: 20px; font-weight: 700; color: #1C1917; }
+        .lead { margin: 0 0 20px; font-size: 14px; line-height: 1.6; color: #57534E; }
+        .otp-container { text-align: center; margin: 32px 0; }
+        .otp-box { display: inline-block; background-color: #FFF8F5; border: 2px dashed #D96342; border-radius: 12px; padding: 18px 36px; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #D96342; font-family: monospace, monospace; }
+        .note-box { background-color: #FFF8F5; border: 1px solid #F3D5CC; border-radius: 12px; padding: 16px; margin: 24px 0; font-size: 12px; line-height: 1.5; color: #8C3E26; }
+        .security-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; margin: 24px 0 0; font-size: 12px; line-height: 1.5; color: #475569; }
+        .footer { padding: 24px 32px; background-color: #FAF8F5; border-top: 1px solid #E7E2DA; text-align: center; font-size: 11px; color: #A8A29E; line-height: 1.6; }
+      </style>
+    </head>
+    <body>
+      <div class="wrapper">
+        <div class="main-card">
+          <div class="header">
+            <h1>UTSAV</h1>
+            <p>Smart Event Management Platform</p>
+          </div>
+          <div class="content">
+            <h2 class="title">Sign-In Verification Code</h2>
+            <p class="lead">Hello <strong>${recipientName}</strong>,</p>
+            <p class="lead">
+              A sign-in request was received for your UTSAV account (<strong>${email}</strong>). Use the verification code below to complete your login:
+            </p>
+            <div class="otp-container">
+              <div class="otp-box">${otp}</div>
+            </div>
+            <div class="note-box">
+              ⏱️ <strong>This code is single-use and will expire in 5 minutes.</strong><br/>
+              Enter this code on the verification screen to securely access your account.
+            </div>
+            <div class="security-box">
+              🛡️ <strong>Security Tip:</strong> Never share this verification code with anyone. UTSAV staff and event organizers will never ask for your verification code. If you did not initiate this sign-in attempt, please reset your password immediately.
+            </div>
+          </div>
+          <div class="footer">
+            <p style="margin: 0 0 6px;">
+              This is an automated security notification regarding your UTSAV account.
+            </p>
+            <p style="margin: 0;">&copy; 2026 UTSAV Platform. India's Curated Event Discovery & Ticketing Platform.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject,
+    text,
+    html,
+  });
+};
+
+/**
  * Send branded UTSAV Booking Confirmation email with dynamic QR ticket passes
  */
 export const sendBookingConfirmationEmail = async ({ booking, event, user, tickets = [] }) => {
@@ -1025,6 +1107,7 @@ export const sendReminderEmailForBooking = async (arg1, arg2 = '24h') => {
 export default {
   sendEmail,
   sendPasswordResetEmail,
+  send2FAVerificationEmail,
   sendBookingConfirmationEmail,
   sendConfirmationEmailForBooking,
   sendCancellationEmail,

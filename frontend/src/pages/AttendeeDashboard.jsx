@@ -32,6 +32,8 @@ import BookingDetailsModal from '../components/BookingDetailsModal';
 import ReviewModal from '../components/ReviewModal';
 import FeaturedCarousel from '../components/FeaturedCarousel';
 import Footer from '../components/Footer';
+import TwoFactorSettings from '../components/TwoFactorSettings';
+import ActiveSessionsCard from '../components/ActiveSessionsCard';
 import {
   fetchAttendeeStatsApi,
   fetchMyBookingsApi,
@@ -47,6 +49,7 @@ import {
   verifyPaymentApi,
   recordPaymentFailureApi,
 } from '../api/attendee';
+import { toggle2FAApi } from '../api/auth';
 import { loadRazorpayScript } from '../utils/razorpay';
 import { fetchPublishedEventsApi } from '../api/events';
 import { EVENT_CATEGORIES, CITIES, FORMAT_OPTIONS } from '../config/taxonomy';
@@ -150,9 +153,18 @@ export default function AttendeeDashboard() {
     phone: '',
     bio: '',
     city: '',
+    twoFactorEnabled: false,
+    twoFactorMethod: 'email',
+    totpEnrolled: false,
   });
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileMsg, setProfileMsg] = useState(null);
+
+  // 2FA Security State
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false);
+  const [twoFactorMsg, setTwoFactorMsg] = useState(null);
+  const [show2FAConfirm, setShow2FAConfirm] = useState(false);
+  const [twoFactorPassword, setTwoFactorPassword] = useState('');
 
   // Password Form
   const [passwordData, setPasswordData] = useState({
@@ -308,6 +320,9 @@ export default function AttendeeDashboard() {
           phone: res.user.phone || '',
           bio: res.user.bio || '',
           city: res.user.city || '',
+          twoFactorEnabled: Boolean(res.user.twoFactorEnabled),
+          twoFactorMethod: res.user.twoFactorMethod || 'email',
+          totpEnrolled: Boolean(res.user.totpEnrolled),
         });
       }
     } catch (err) {
@@ -589,6 +604,41 @@ export default function AttendeeDashboard() {
       setPasswordMsg({ type: 'error', text: err.message || 'An error occurred.' });
     } finally {
       setPasswordLoading(false);
+    }
+  };
+
+  // 2FA toggle submission
+  const handleToggle2FA = async (e) => {
+    e.preventDefault();
+    setTwoFactorLoading(true);
+    setTwoFactorMsg(null);
+    try {
+      const targetState = !profile.twoFactorEnabled;
+      const res = await toggle2FAApi({
+        enabled: targetState,
+        currentPassword: twoFactorPassword,
+      });
+      if (res && res.success) {
+        setProfile((prev) => ({ ...prev, twoFactorEnabled: res.twoFactorEnabled }));
+        setTwoFactorMsg({
+          type: 'success',
+          text: `Two-factor authentication has been ${res.twoFactorEnabled ? 'enabled' : 'disabled'}.`,
+        });
+        setShow2FAConfirm(false);
+        setTwoFactorPassword('');
+      } else {
+        setTwoFactorMsg({
+          type: 'error',
+          text: res?.message || 'Failed to update 2FA settings.',
+        });
+      }
+    } catch (err) {
+      setTwoFactorMsg({
+        type: 'error',
+        text: err.message || 'An error occurred updating 2FA settings.',
+      });
+    } finally {
+      setTwoFactorLoading(false);
     }
   };
 
@@ -2199,85 +2249,99 @@ export default function AttendeeDashboard() {
                 </form>
               </div>
 
-              {/* Password & Security Card */}
-              <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl p-6 shadow-xs space-y-4">
-                <div className="flex items-center gap-2 border-b border-[var(--color-borders)] pb-3">
-                  <KeyRound className="w-4 h-4 text-[var(--color-golden-accent)]" />
-                  <h4 className="font-bold text-sm">Security & Password</h4>
-                </div>
+              {/* Security & 2FA Column */}
+              <div className="space-y-6">
+                {/* Two-Factor Authentication Card */}
+                <TwoFactorSettings
+                  user={profile}
+                  onUserUpdated={(updates) =>
+                    setProfile((prev) => ({ ...prev, ...updates }))
+                  }
+                />
 
-                <form onSubmit={handleUpdatePassword} className="space-y-4">
-                  <div>
-                    <label className="text-xs font-bold block mb-1">Current Password</label>
-                    <input
-                      type="password"
-                      value={passwordData.currentPassword}
-                      onChange={(e) =>
-                        setPasswordData({ ...passwordData, currentPassword: e.target.value })
-                      }
-                      required
-                      placeholder="••••••••"
-                      className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
-                    />
+                {/* Active Security Sessions Card */}
+                <ActiveSessionsCard />
+
+                {/* Password & Security Card */}
+                <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl p-6 shadow-xs space-y-4">
+                  <div className="flex items-center gap-2 border-b border-[var(--color-borders)] pb-3">
+                    <KeyRound className="w-4 h-4 text-[var(--color-golden-accent)]" />
+                    <h4 className="font-bold text-sm">Change Password</h4>
                   </div>
 
-                  <div>
-                    <label className="text-xs font-bold block mb-1">New Password</label>
-                    <input
-                      type="password"
-                      value={passwordData.newPassword}
-                      onChange={(e) =>
-                        setPasswordData({ ...passwordData, newPassword: e.target.value })
-                      }
-                      required
-                      minLength={6}
-                      placeholder="Minimum 6 characters"
-                      className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold block mb-1">Confirm New Password</label>
-                    <input
-                      type="password"
-                      value={passwordData.confirmPassword}
-                      onChange={(e) =>
-                        setPasswordData({ ...passwordData, confirmPassword: e.target.value })
-                      }
-                      required
-                      placeholder="Repeat new password"
-                      className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
-                    />
-                  </div>
-
-                  {passwordMsg && (
-                    <div
-                      className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
-                        passwordMsg.type === 'success'
-                          ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                          : 'bg-red-500/10 text-red-600 border border-red-500/20'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-4 h-4 shrink-0" />
-                      <span>{passwordMsg.text}</span>
+                  <form onSubmit={handleUpdatePassword} className="space-y-4">
+                    <div>
+                      <label className="text-xs font-bold block mb-1">Current Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.currentPassword}
+                        onChange={(e) =>
+                          setPasswordData({ ...passwordData, currentPassword: e.target.value })
+                        }
+                        required
+                        placeholder="••••••••"
+                        className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                      />
                     </div>
-                  )}
 
-                  <button
-                    type="submit"
-                    disabled={passwordLoading}
-                    className="w-full py-2.5 px-4 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-main-text)] font-bold text-xs rounded-xl transition-colors cursor-pointer"
-                  >
-                    {passwordLoading ? 'Updating Password...' : 'Change Password'}
-                  </button>
-                </form>
+                    <div>
+                      <label className="text-xs font-bold block mb-1">New Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) =>
+                          setPasswordData({ ...passwordData, newPassword: e.target.value })
+                        }
+                        required
+                        minLength={6}
+                        placeholder="Minimum 6 characters"
+                        className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                      />
+                    </div>
 
-                {/* Account Role Notice */}
-                <div className="pt-2 border-t border-[var(--color-borders)] text-[11px] text-[var(--color-secondary-text)] flex items-start gap-2">
-                  <Shield className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                  <span>
-                    Logged in as <strong>Attendee</strong>. Keep your account details up to date for smooth event entry.
-                  </span>
+                    <div>
+                      <label className="text-xs font-bold block mb-1">Confirm New Password</label>
+                      <input
+                        type="password"
+                        value={passwordData.confirmPassword}
+                        onChange={(e) =>
+                          setPasswordData({ ...passwordData, confirmPassword: e.target.value })
+                        }
+                        required
+                        placeholder="Repeat new password"
+                        className="w-full px-3.5 py-2 rounded-xl bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] text-xs text-[var(--color-main-text)] focus:outline-hidden"
+                      />
+                    </div>
+
+                    {passwordMsg && (
+                      <div
+                        className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                          passwordMsg.type === 'success'
+                            ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                            : 'bg-red-500/10 text-red-600 border border-red-500/20'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4 shrink-0" />
+                        <span>{passwordMsg.text}</span>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={passwordLoading}
+                      className="w-full py-2.5 px-4 bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)] border border-[var(--color-borders)] text-[var(--color-main-text)] font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                    >
+                      {passwordLoading ? 'Updating Password...' : 'Change Password'}
+                    </button>
+                  </form>
+
+                  {/* Account Role Notice */}
+                  <div className="pt-2 border-t border-[var(--color-borders)] text-[11px] text-[var(--color-secondary-text)] flex items-start gap-2">
+                    <Shield className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                    <span>
+                      Logged in as <strong>Attendee</strong>. Keep your account details up to date for smooth event entry.
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>

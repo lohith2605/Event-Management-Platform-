@@ -18,6 +18,8 @@ import {
   AlertCircle,
   X,
   Loader2,
+  Smartphone,
+  KeyRound,
 } from 'lucide-react';
 import { BRAND } from '../config/brand';
 import { useAuth } from '../context/AuthContext';
@@ -51,7 +53,18 @@ export default function AuthPage({ initialMode = 'login' }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { user: currentUser, role: currentRole, isAuthenticated, isLoading: authLoading, login, register, loginWithGoogle } = useAuth();
+  const {
+    user: currentUser,
+    role: currentRole,
+    isAuthenticated,
+    isLoading: authLoading,
+    login,
+    register,
+    loginWithGoogle,
+    verify2FA,
+    resend2FA,
+    cancel2FA,
+  } = useAuth();
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -105,6 +118,26 @@ export default function AuthPage({ initialMode = 'login' }) {
   const [forgotSuccessMessage, setForgotSuccessMessage] = useState('');
   const [forgotError, setForgotError] = useState('');
 
+  // Two-Factor Authentication (2FA) Challenge States
+  const [challenge2FA, setChallenge2FA] = useState(null); // { tempToken, email, twoFactorMethod }
+  const [otpCode, setOtpCode] = useState('');
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [otpSubmitting, setOtpSubmitting] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [resendSubmitting, setResendSubmitting] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState('');
+
+  // 60-Second Cooldown Timer for Resending Verification Codes
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   // Handle mode switching with safe state preservation
   const handleSwitchMode = (nextMode) => {
     setPassword('');
@@ -113,6 +146,13 @@ export default function AuthPage({ initialMode = 'login' }) {
     setShowConfirmPassword(false);
     setErrors({});
     setServerError('');
+    setChallenge2FA(null);
+    setOtpCode('');
+    setIsRecoveryMode(false);
+    setRecoveryCode('');
+    setOtpError('');
+    setResendSuccess('');
+    cancel2FA();
 
     if (nextMode === 'signup') {
       navigate('/signup', { replace: true });
@@ -172,7 +212,23 @@ export default function AuthPage({ initialMode = 'login' }) {
 
     try {
       if (mode === 'login') {
-        const user = await login(email, password);
+        const result = await login(email, password);
+        if (result && result.require2FA) {
+          setChallenge2FA({
+            tempToken: result.tempToken,
+            email: result.email,
+            twoFactorMethod: result.twoFactorMethod || 'email',
+          });
+          setOtpCode('');
+          setIsRecoveryMode(false);
+          setRecoveryCode('');
+          setOtpError('');
+          setResendSuccess('');
+          setResendCooldown(60);
+          return;
+        }
+
+        const user = result;
         // Direct to authorized destination
         const from = location.state?.from?.pathname;
         if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
@@ -219,8 +275,23 @@ export default function AuthPage({ initialMode = 'login' }) {
     setIsGoogleSubmitting(true);
 
     try {
-      const user = await loginWithGoogle();
+      const result = await loginWithGoogle();
+      if (result && result.require2FA) {
+        setChallenge2FA({
+          tempToken: result.tempToken,
+          email: result.email,
+          twoFactorMethod: result.twoFactorMethod || 'email',
+        });
+        setOtpCode('');
+        setIsRecoveryMode(false);
+        setRecoveryCode('');
+        setOtpError('');
+        setResendSuccess('');
+        setResendCooldown(60);
+        return;
+      }
 
+      const user = result;
       // Direct to authorized destination
       const from = location.state?.from?.pathname;
       if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
@@ -243,6 +314,101 @@ export default function AuthPage({ initialMode = 'login' }) {
     } finally {
       setIsGoogleSubmitting(false);
     }
+  };
+
+  // 2FA Verification Handler (Supports TOTP code, Recovery code, and Email OTP)
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    if (otpSubmitting || !challenge2FA) return;
+    setOtpError('');
+    setResendSuccess('');
+
+    if (isRecoveryMode) {
+      const cleanRecovery = recoveryCode.trim();
+      if (!cleanRecovery) {
+        setOtpError('Please enter an emergency recovery code.');
+        return;
+      }
+
+      setOtpSubmitting(true);
+      try {
+        const verifiedUser = await verify2FA(cleanRecovery, challenge2FA.tempToken, true);
+        setChallenge2FA(null);
+
+        const from = location.state?.from?.pathname;
+        if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
+          navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
+        } else if (verifiedUser.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else if (verifiedUser.role === 'organizer') {
+          navigate('/organizer/dashboard', { replace: true });
+        } else {
+          navigate('/attendee', { replace: true });
+        }
+      } catch (err) {
+        setOtpError(err.message || 'Invalid or already consumed recovery code.');
+      } finally {
+        setOtpSubmitting(false);
+      }
+      return;
+    }
+
+    const clean = otpCode.trim();
+    if (!clean || clean.length !== 6 || !/^\d{6}$/.test(clean)) {
+      setOtpError('Please enter a valid 6-digit numeric verification code.');
+      return;
+    }
+
+    setOtpSubmitting(true);
+    try {
+      const verifiedUser = await verify2FA(clean, challenge2FA.tempToken, false);
+      setChallenge2FA(null);
+
+      // Direct to authorized destination
+      const from = location.state?.from?.pathname;
+      if (from && from !== '/' && !from.startsWith('/login') && !from.startsWith('/signup') && !from.startsWith('/register')) {
+        navigate(from === '/dashboard' ? '/attendee' : from, { replace: true });
+      } else if (verifiedUser.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else if (verifiedUser.role === 'organizer') {
+        navigate('/organizer/dashboard', { replace: true });
+      } else {
+        navigate('/attendee', { replace: true });
+      }
+    } catch (err) {
+      setOtpError(err.message || 'Verification failed. Please check your code and try again.');
+    } finally {
+      setOtpSubmitting(false);
+    }
+  };
+
+  // 2FA OTP Resend Handler (Email OTP only)
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || resendSubmitting || !challenge2FA) return;
+    setResendSubmitting(true);
+    setOtpError('');
+    setResendSuccess('');
+
+    try {
+      const res = await resend2FA(challenge2FA.tempToken);
+      setResendSuccess(res.message || 'A fresh verification code has been dispatched to your email.');
+      setResendCooldown(60);
+    } catch (err) {
+      setOtpError(err.message || 'Could not resend code. Please try again later.');
+    } finally {
+      setResendSubmitting(false);
+    }
+  };
+
+  // Cancel 2FA Challenge & Return to Standard Login
+  const handleCancel2FA = () => {
+    setChallenge2FA(null);
+    setOtpCode('');
+    setIsRecoveryMode(false);
+    setRecoveryCode('');
+    setOtpError('');
+    setResendSuccess('');
+    cancel2FA();
   };
 
   // Forgot password submission
@@ -465,17 +631,208 @@ export default function AuthPage({ initialMode = 'login' }) {
             </span>
           </div>
 
-          {/* Form Header */}
-          <div className="space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--color-main-text)] font-serif leading-tight">
-              {mode === 'login' ? 'Welcome back' : 'Create your account'}
-            </h1>
-            <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
-              {mode === 'login'
-                ? 'Sign in to access your event passes or organizer tools.'
-                : 'Join UTSAV to reserve event passes or host verified campus gatherings.'}
-            </p>
-          </div>
+          {/* Two-Factor Authentication Challenge View */}
+          {challenge2FA ? (
+            <div className="space-y-4 animate-fade-in py-2">
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 rounded-2xl bg-[var(--color-primary-action)]/10 text-[var(--color-primary-action)] border border-[var(--color-primary-action)]/20 mx-auto flex items-center justify-center shadow-xs">
+                  {isRecoveryMode ? (
+                    <KeyRound className="w-6 h-6" />
+                  ) : challenge2FA.twoFactorMethod === 'authenticator' ? (
+                    <Smartphone className="w-6 h-6" />
+                  ) : (
+                    <ShieldCheck className="w-6 h-6" />
+                  )}
+                </div>
+                <h1 className="text-2xl font-extrabold text-[var(--color-main-text)] font-serif leading-tight">
+                  {isRecoveryMode
+                    ? 'Emergency Recovery Code'
+                    : challenge2FA.twoFactorMethod === 'authenticator'
+                      ? 'Authenticator App Verification'
+                      : 'Two-Factor Verification'}
+                </h1>
+                <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed max-w-xs mx-auto">
+                  {isRecoveryMode ? (
+                    <>Enter one of your 12-character emergency recovery codes to regain access to your account.</>
+                  ) : challenge2FA.twoFactorMethod === 'authenticator' ? (
+                    <>Open your <strong>Google Authenticator</strong> or compatible TOTP app and enter the current 6-digit code.</>
+                  ) : (
+                    <>We sent a 6-digit verification code to <span className="font-bold text-[var(--color-main-text)]">{challenge2FA.email}</span>. Enter the code below to complete sign-in.</>
+                  )}
+                </p>
+              </div>
+
+              {/* OTP Error Alert */}
+              {otpError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-600 dark:text-red-400 animate-fade-in">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="font-semibold leading-relaxed">{otpError}</p>
+                </div>
+              )}
+
+              {/* Resend Success Notice */}
+              {resendSuccess && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-start gap-2.5 text-xs text-emerald-600 dark:text-emerald-400 animate-fade-in">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+                  <p className="font-semibold leading-relaxed">{resendSuccess}</p>
+                </div>
+              )}
+
+              {/* Verification Form */}
+              <form onSubmit={handleVerifyOtp} className="space-y-4" noValidate>
+                {isRecoveryMode ? (
+                  <div className="space-y-1.5">
+                    <label htmlFor="recovery-input" className="block text-xs font-bold text-[var(--color-main-text)] uppercase tracking-wider text-center">
+                      Recovery Code (XXXX-XXXX-XXXX)
+                    </label>
+                    <input
+                      id="recovery-input"
+                      type="text"
+                      autoFocus
+                      autoComplete="off"
+                      value={recoveryCode}
+                      onChange={(e) => {
+                        setRecoveryCode(e.target.value.toUpperCase());
+                        if (otpError) setOtpError('');
+                      }}
+                      placeholder="ABCD-EFGH-IJKL"
+                      className="w-full text-center tracking-[4px] text-lg font-mono font-extrabold py-3 px-4 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-xl text-[var(--color-main-text)] focus:border-[var(--color-primary-action)] focus:outline-hidden transition-all shadow-2xs"
+                      required
+                    />
+                    <div className="text-center text-[11px] text-[var(--color-secondary-text)]">
+                      <span>Each recovery code can only be used once.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <label htmlFor="otp-input" className="block text-xs font-bold text-[var(--color-main-text)] uppercase tracking-wider text-center">
+                      {challenge2FA.twoFactorMethod === 'authenticator' ? 'Authenticator Code' : 'Verification Code'}
+                    </label>
+                    <input
+                      id="otp-input"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      autoFocus
+                      autoComplete="one-time-code"
+                      value={otpCode}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        setOtpCode(val);
+                        if (otpError) setOtpError('');
+                      }}
+                      placeholder="••••••"
+                      className="w-full text-center tracking-[10px] text-2xl font-mono font-extrabold py-3 px-4 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-xl text-[var(--color-main-text)] focus:border-[var(--color-primary-action)] focus:outline-hidden transition-all shadow-2xs"
+                      required
+                    />
+                    <div className="flex justify-between items-center text-[11px] text-[var(--color-secondary-text)] px-1">
+                      <span>{challenge2FA.twoFactorMethod === 'authenticator' ? 'Changes every 30s' : 'Valid for 5 minutes'}</span>
+                      <span className="font-semibold">{otpCode.length}/6 digits</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={otpSubmitting || (isRecoveryMode ? !recoveryCode.trim() : otpCode.length !== 6)}
+                  className="w-full py-2.5 px-4 bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] disabled:opacity-50 disabled:cursor-not-allowed text-[var(--color-primary-text)] font-bold text-xs xl:text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
+                >
+                  {otpSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>{isRecoveryMode ? 'Verify Recovery Code' : 'Verify & Continue'}</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Method Options, Resend, and Cancellation Controls */}
+                <div className="pt-2 border-t border-[var(--color-borders)] flex flex-col gap-2.5 text-center">
+                  {challenge2FA.twoFactorMethod === 'authenticator' ? (
+                    <div>
+                      {isRecoveryMode ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRecoveryMode(false);
+                            setOtpError('');
+                          }}
+                          className="text-xs font-semibold text-[var(--color-primary-action)] hover:underline cursor-pointer"
+                        >
+                          Use 6-digit authenticator code instead
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsRecoveryMode(true);
+                            setOtpError('');
+                          }}
+                          className="text-xs text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] transition-colors cursor-pointer"
+                        >
+                          Lost phone? Use an emergency recovery code
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[var(--color-secondary-text)]">
+                      Didn't receive the email?{' '}
+                      {resendCooldown > 0 ? (
+                        <span className="text-[var(--color-secondary-text)] font-semibold">
+                          Resend code in {resendCooldown}s
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleResendOtp}
+                          disabled={resendSubmitting}
+                          className="font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer disabled:opacity-50"
+                        >
+                          {resendSubmitting ? 'Dispatching...' : 'Resend Code'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleCancel2FA}
+                    className="text-xs text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer py-1"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Cancel and return to sign in</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          ) : (
+            <>
+              {/* Form Header */}
+              <div className="space-y-1">
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-[var(--color-main-text)] font-serif leading-tight">
+                  {mode === 'login' ? 'Welcome back' : 'Create your account'}
+                </h1>
+                <p className="text-xs text-[var(--color-secondary-text)] leading-relaxed">
+                  {mode === 'login'
+                    ? 'Sign in to access your event passes or organizer tools.'
+                    : 'Join UTSAV to reserve event passes or host verified campus gatherings.'}
+                </p>
+              </div>
+
+          {/* Session Expired Banner */}
+          {searchParams.get('sessionExpired') === '1' && !serverError && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-2.5 text-xs text-amber-600 dark:text-amber-400 animate-fade-in">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <p className="font-semibold leading-relaxed">
+                Your session expired due to inactivity. Please log in again to continue.
+              </p>
+            </div>
+          )}
 
           {/* Server Error Feedback */}
           {serverError && (
@@ -850,6 +1207,8 @@ export default function AuthPage({ initialMode = 'login' }) {
               </p>
             )}
           </div>
+          </>
+        )}
           </motion.div>
         </AnimatePresence>
       </main>

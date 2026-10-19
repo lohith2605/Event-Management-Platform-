@@ -16,6 +16,7 @@ import { ThemeProvider } from './context/ThemeContext.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import { SocketProvider } from './context/SocketContext.jsx';
 import NotificationToastContainer from './components/NotificationToastContainer';
+import SessionTimeoutModal from './components/SessionTimeoutModal';
 import { Loader2 } from 'lucide-react';
 
 // Public Layout includes the full marketing and discovery footer
@@ -99,6 +100,8 @@ export default function App() {
           <BrowserRouter>
             {/* Global Real-Time In-App Notification Toast Popup */}
             <NotificationToastContainer />
+            {/* Global Session Inactivity Warning Modal */}
+            <SessionTimeoutModal />
             <Routes>
               {/* Root Route: Smart landing / attendee dashboard redirection */}
               <Route path="/" element={<RootRoute />} />

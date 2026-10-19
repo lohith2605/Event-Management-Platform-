@@ -1,5 +1,15 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getMeApi, loginApi, adminLoginApi, registerApi, logoutApi, googleAuthApi } from '../api/auth';
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import {
+  getMeApi,
+  loginApi,
+  adminLoginApi,
+  registerApi,
+  logoutApi,
+  googleAuthApi,
+  verify2FAApi,
+  resend2FAApi,
+  refreshSessionApi,
+} from '../api/auth';
 import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { auth, isFirebaseConfigured } from '../config/firebase';
 
@@ -7,7 +17,17 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [pending2FA, setPending2FA] = useState(null);
+
+  // Inactivity warning modal states
+  const [showTimeoutWarning, setShowTimeoutWarning] = useState(false);
+  const [warningSecondsRemaining, setWarningSecondsRemaining] = useState(120);
+  const [isRefreshingSession, setIsRefreshingSession] = useState(false);
+
+  const userRef = useRef(user);
+  userRef.current = user;
 
   // Load session on startup and page refresh
   const checkAuth = useCallback(async () => {
@@ -15,11 +35,16 @@ export function AuthProvider({ children }) {
       const data = await getMeApi();
       if (data && data.user) {
         setUser(data.user);
+        if (data.session) {
+          setSession(data.session);
+        }
       } else {
         setUser(null);
+        setSession(null);
       }
     } catch (err) {
       setUser(null);
+      setSession(null);
     } finally {
       setIsLoading(false);
     }
@@ -29,13 +54,102 @@ export function AuthProvider({ children }) {
     checkAuth();
   }, [checkAuth]);
 
+  // Session Inactivity & Expiry Timer
+  useEffect(() => {
+    if (!user || !session?.expiresAt) {
+      setShowTimeoutWarning(false);
+      return;
+    }
+
+    const checkInterval = setInterval(() => {
+      const now = Date.now();
+      const expiresAtMs = new Date(session.expiresAt).getTime();
+      const absoluteExpiresAtMs = session.absoluteExpiresAt
+        ? new Date(session.absoluteExpiresAt).getTime()
+        : expiresAtMs;
+
+      // Effective deadline is the earlier of inactivity or absolute lifetime
+      const effectiveExpiryMs = Math.min(expiresAtMs, absoluteExpiresAtMs);
+      const remainingMs = effectiveExpiryMs - now;
+
+      if (remainingMs <= 0) {
+        // Session expired on the client side
+        clearInterval(checkInterval);
+        setUser(null);
+        setSession(null);
+        setShowTimeoutWarning(false);
+
+        const currentRole = userRef.current?.role;
+        const targetLogin = currentRole === 'admin' ? '/admin/login?sessionExpired=1' : '/login?sessionExpired=1';
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.href = targetLogin;
+        }
+        return;
+      }
+
+      // Warning threshold (default 2 minutes = 120,000 ms)
+      const warningThresholdMs = session.warningBeforeExpiryMs || 120000;
+      if (remainingMs <= warningThresholdMs) {
+        setShowTimeoutWarning(true);
+        setWarningSecondsRemaining(Math.max(1, Math.ceil(remainingMs / 1000)));
+      } else {
+        setShowTimeoutWarning(false);
+      }
+    }, 1000);
+
+    return () => clearInterval(checkInterval);
+  }, [user, session]);
+
+  // Extend session on user action / keep alive
+  const refreshSession = async () => {
+    try {
+      setIsRefreshingSession(true);
+      const data = await refreshSessionApi();
+      if (data && data.session) {
+        setSession(data.session);
+        setShowTimeoutWarning(false);
+      }
+      return data;
+    } catch (err) {
+      // If refresh fails due to 401 (already expired or revoked on server)
+      if (err.status === 401) {
+        setUser(null);
+        setSession(null);
+        setShowTimeoutWarning(false);
+        const currentRole = userRef.current?.role;
+        const targetLogin = currentRole === 'admin' ? '/admin/login?sessionExpired=1' : '/login?sessionExpired=1';
+        if (typeof window !== 'undefined' && window.location) {
+          window.location.href = targetLogin;
+        }
+      }
+      throw err;
+    } finally {
+      setIsRefreshingSession(false);
+    }
+  };
+
   // Login handler
   const login = async (email, password) => {
     const data = await loginApi({ email, password });
-    if (data && data.user) {
-      setUser(data.user);
+    if (data && data.require2FA) {
+      setPending2FA({
+        tempToken: data.tempToken,
+        email: data.email,
+        twoFactorMethod: data.twoFactorMethod || 'email',
+        requireSetup: Boolean(data.requireSetup),
+        method: 'password',
+      });
+      return data;
     }
-    return data.user;
+    if (data && data.user) {
+      setPending2FA(null);
+      setUser(data.user);
+      if (data.session) {
+        setSession(data.session);
+      }
+      return data.user;
+    }
+    return data;
   };
 
   // Google OAuth Login handler
@@ -54,10 +168,25 @@ export function AuthProvider({ children }) {
       const idToken = await result.user.getIdToken();
 
       const data = await googleAuthApi(idToken);
-      if (data && data.user) {
-        setUser(data.user);
+      if (data && data.require2FA) {
+        setPending2FA({
+          tempToken: data.tempToken,
+          email: data.email,
+          twoFactorMethod: data.twoFactorMethod || 'email',
+          requireSetup: Boolean(data.requireSetup),
+          method: 'google',
+        });
+        return data;
       }
-      return data.user;
+      if (data && data.user) {
+        setPending2FA(null);
+        setUser(data.user);
+        if (data.session) {
+          setSession(data.session);
+        }
+        return data.user;
+      }
+      return data;
     } catch (err) {
       if (err.code === 'auth/popup-closed-by-user') {
         const cancelErr = new Error('Google sign-in was cancelled.');
@@ -86,10 +215,67 @@ export function AuthProvider({ children }) {
   // Dedicated Admin Login handler
   const adminLogin = async (email, password) => {
     const data = await adminLoginApi({ email, password });
+    if (data && data.require2FA) {
+      setPending2FA({
+        tempToken: data.tempToken,
+        email: data.email,
+        twoFactorMethod: data.twoFactorMethod || 'authenticator',
+        requireSetup: Boolean(data.requireSetup),
+        role: 'admin',
+        method: 'admin',
+      });
+      return data;
+    }
+    if (data && data.user) {
+      setPending2FA(null);
+      setUser(data.user);
+      if (data.session) {
+        setSession(data.session);
+      }
+      return data.user;
+    }
+    return data;
+  };
+
+  // Verify 2FA (Handles TOTP Authenticator, Recovery Code, or Email OTP)
+  const verify2FA = async (codeOrOtp, overrideTempToken, isRecoveryCode = false) => {
+    const tokenToUse = overrideTempToken || pending2FA?.tempToken;
+    if (!tokenToUse) {
+      throw new Error('No active verification session found. Please log in again.');
+    }
+
+    const data = await verify2FAApi({
+      tempToken: tokenToUse,
+      otp: codeOrOtp,
+      code: codeOrOtp,
+      recoveryCode: isRecoveryCode ? codeOrOtp : undefined,
+      isRecoveryCode,
+    });
+
     if (data && data.user) {
       setUser(data.user);
+      if (data.session) {
+        setSession(data.session);
+      }
+      setPending2FA(null);
+      return data.user;
     }
-    return data.user;
+    return data;
+  };
+
+  // Resend 2FA OTP (Email only)
+  const resend2FA = async (overrideTempToken) => {
+    const tokenToUse = overrideTempToken || pending2FA?.tempToken;
+    if (!tokenToUse) {
+      throw new Error('No active verification session found. Please log in again.');
+    }
+
+    return await resend2FAApi({ tempToken: tokenToUse });
+  };
+
+  // Cancel 2FA challenge and return to login
+  const cancel2FA = () => {
+    setPending2FA(null);
   };
 
   // Register handler (attendee or organizer)
@@ -97,6 +283,9 @@ export function AuthProvider({ children }) {
     const data = await registerApi(userData);
     if (data && data.user) {
       setUser(data.user);
+      if (data.session) {
+        setSession(data.session);
+      }
     }
     return data.user;
   };
@@ -112,6 +301,9 @@ export function AuthProvider({ children }) {
       console.warn('Logout API warning:', err);
     } finally {
       setUser(null);
+      setSession(null);
+      setPending2FA(null);
+      setShowTimeoutWarning(false);
     }
   };
 
@@ -128,12 +320,21 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     role: safeRole,
+    session,
     isAuthenticated: !!user,
     isLoading,
+    pending2FA,
+    showTimeoutWarning,
+    warningSecondsRemaining,
+    isRefreshingSession,
+    refreshSession,
     checkAuth,
     login,
     loginWithGoogle,
     adminLogin,
+    verify2FA,
+    resend2FA,
+    cancel2FA,
     register,
     logout,
   };

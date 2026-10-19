@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "setup:admin": "node src/scripts/bootstrapAdmin.js",
+    "recover:admin": "node src/scripts/recoverAdmin2FA.js",
     "seed:events": "node src/scripts/seedEvents.js",
     "migrate:legacy": "node src/scripts/migrateLegacyUsers.js"
   },
@@ -22,6 +23,7 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^8.9.5",
     "nodemailer": "^10.1.1",
+    "otplib": "^13.5.0",
     "qrcode": "^1.5.4",
     "razorpay": "^2.9.8",
     "socket.io": "^4.8.4"

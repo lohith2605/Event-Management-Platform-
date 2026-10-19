@@ -78,6 +78,63 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    twoFactorMethod: {
+      type: String,
+      enum: ['email', 'authenticator'],
+      default: 'email',
+    },
+    twoFactorOtpHash: {
+      type: String,
+      select: false,
+    },
+    twoFactorOtpExpiresAt: {
+      type: Date,
+      select: false,
+    },
+    twoFactorAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    twoFactorLastSentAt: {
+      type: Date,
+      select: false,
+    },
+    totpSecret: {
+      type: String,
+      select: false,
+    },
+    totpPendingSecret: {
+      type: String,
+      select: false,
+    },
+    totpEnrolled: {
+      type: Boolean,
+      default: false,
+    },
+    totpEnrolledAt: {
+      type: Date,
+      select: false,
+    },
+    totpLastAcceptedStep: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
+    recoveryCodes: {
+      type: [
+        {
+          codeHash: { type: String, required: true },
+          used: { type: Boolean, default: false },
+          usedAt: { type: Date },
+        },
+      ],
+      select: false,
+    },
   },
   {
     timestamps: true,

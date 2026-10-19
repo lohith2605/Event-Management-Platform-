@@ -33,9 +33,12 @@ export default defineConfig({
         secure: false,
         configure: (proxy) => {
           proxy.on('error', (err) => {
-            if (err.code !== 'ECONNRESET' && err.code !== 'ECONNREFUSED') {
-              console.warn('[vite ws proxy error]:', err.message);
-            }
+            if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') return;
+            console.warn('[vite ws proxy error]:', err.message);
+          });
+          proxy.on('proxyReqWsError', (err) => {
+            if (err.code === 'ECONNREFUSED' || err.code === 'ECONNRESET') return;
+            console.warn('[vite ws proxy error]:', err.message);
           });
         },
       },

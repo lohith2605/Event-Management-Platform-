@@ -15,6 +15,7 @@ import Ticket from '../src/models/Ticket.js';
 import Coupon from '../src/models/Coupon.js';
 import CouponRedemption from '../src/models/CouponRedemption.js';
 import AuditLog from '../src/models/AuditLog.js';
+import Session from '../src/models/Session.js';
 
 let passed = 0;
 let failed = 0;
@@ -55,9 +56,16 @@ async function runE2ETests() {
     baseUrl = `http://localhost:${port}`;
     console.log(`Ephemeral test server running at ${baseUrl}\n`);
 
-    const signToken = (user) => {
+    const signToken = async (user) => {
+      const sessionId = crypto.randomBytes(32).toString('hex');
+      await Session.create({
+        userId: user._id,
+        sessionId,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        absoluteExpiresAt: new Date(Date.now() + 8 * 3600 * 1000),
+      });
       return jwt.sign(
-        { id: user._id, role: user.role },
+        { id: user._id, role: user.role, sessionId },
         process.env.JWT_SECRET || 'utsav_super_secure_jwt_secret_key_2026_events_platform',
         { expiresIn: '1d' }
       );
@@ -86,7 +94,7 @@ async function runE2ETests() {
       password: 'Password123!',
       role: 'organizer',
     });
-    org1Token = signToken(organizer1);
+    org1Token = await signToken(organizer1);
 
     organizer2 = await User.create({
       name: `Org E2E Two ${testRunId}`,
@@ -94,7 +102,7 @@ async function runE2ETests() {
       password: 'Password123!',
       role: 'organizer',
     });
-    org2Token = signToken(organizer2);
+    org2Token = await signToken(organizer2);
 
     attendee1 = await User.create({
       name: `Attendee E2E One ${testRunId}`,
@@ -102,7 +110,7 @@ async function runE2ETests() {
       password: 'Password123!',
       role: 'attendee',
     });
-    att1Token = signToken(attendee1);
+    att1Token = await signToken(attendee1);
 
     attendee2 = await User.create({
       name: `Attendee E2E Two ${testRunId}`,
@@ -110,7 +118,7 @@ async function runE2ETests() {
       password: 'Password123!',
       role: 'attendee',
     });
-    att2Token = signToken(attendee2);
+    att2Token = await signToken(attendee2);
 
     adminUser = await User.create({
       name: `Admin E2E ${testRunId}`,
@@ -118,7 +126,7 @@ async function runE2ETests() {
       password: 'Password123!',
       role: 'admin',
     });
-    adminToken = signToken(adminUser);
+    adminToken = await signToken(adminUser);
 
     event1 = await Event.create({
       title: `E2E Tech Summit ${testRunId}`,
