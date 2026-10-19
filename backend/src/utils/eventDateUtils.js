@@ -1,8 +1,3 @@
-/**
- * Parses the event's start and end date/time respecting timezone specifications.
- * UTSAV default timezone is IST (UTC+05:30).
- */
-
 const parseTimePart = (timeStr) => {
   if (!timeStr || typeof timeStr !== 'string') return null;
   const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?(?:\s*([A-Z]{3}))?/i);
@@ -22,15 +17,9 @@ const parseTimePart = (timeStr) => {
   return { hours, minutes, tzOffsetMinutes };
 };
 
-/**
- * Calculates the exact UTC end timestamp for an event.
- * @param {Object} event
- * @returns {Date|null}
- */
 export const getEventEndDateTime = (event) => {
   if (!event) return null;
 
-  // 1. Determine base end date
   let baseDate = null;
   if (event.endDate) {
     const parsed = new Date(event.endDate);
@@ -45,7 +34,7 @@ export const getEventEndDateTime = (event) => {
 
   if (!baseDate) return null;
 
-  // 2. Check if event.time specifies an end time range (e.g. '10:00 AM - 5:00 PM IST' or '10:00 AM to 6:30 PM')
+  // If time range is provided (e.g. '10:00 AM - 5:00 PM IST')
   if (event.time && typeof event.time === 'string') {
     const rangeParts = event.time.split(/\s*(?:-|–|to)\s*/i);
     if (rangeParts.length >= 2) {
@@ -59,36 +48,28 @@ export const getEventEndDateTime = (event) => {
     }
   }
 
-  // 3. If baseDate already has specific non-midnight hours/minutes in UTC, use it directly
   if (baseDate.getUTCHours() !== 0 || baseDate.getUTCMinutes() !== 0) {
     return baseDate;
   }
 
-  // 4. If single start time is provided, assume event concludes 4 hours after start time or end of that day
+  // Single start time fallback: conclude 4 hours after start
   if (event.time && typeof event.time === 'string') {
     const startTimeObj = parseTimePart(event.time);
     if (startTimeObj) {
       const endUtc = new Date(baseDate);
-      // Conclude 4 hours after start time
       endUtc.setUTCHours(startTimeObj.hours + 4, startTimeObj.minutes, 0, 0);
       endUtc.setTime(endUtc.getTime() - startTimeObj.tzOffsetMinutes * 60 * 1000);
       return endUtc;
     }
   }
 
-  // 5. Fallback: Conclude at 23:59:59.999 IST on the event date (which is 18:29:59.999 UTC)
+  // Fallback: 23:59:59.999 IST (18:29:59.999 UTC)
   const endOfDayUtc = new Date(baseDate);
   endOfDayUtc.setUTCHours(23, 59, 59, 999);
   endOfDayUtc.setTime(endOfDayUtc.getTime() - 330 * 60 * 1000);
   return endOfDayUtc;
 };
 
-/**
- * Returns true if the event has officially ended based on the current timestamp.
- * @param {Object} event
- * @param {Date} [referenceDate=new Date()]
- * @returns {boolean}
- */
 export const hasEventEnded = (event, referenceDate = new Date()) => {
   const endDateTime = getEventEndDateTime(event);
   if (!endDateTime) return false;

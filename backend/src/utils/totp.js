@@ -1,14 +1,10 @@
 import crypto from 'crypto';
 import QRCode from 'qrcode';
-import { generateSecret, generateSync, verifySync, generateURI } from 'otplib';
+import { generateSecret, verifySync, generateURI } from 'otplib';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // Standard 96-bit IV for AES-GCM
 
-/**
- * Derives a 32-byte encryption key for AES-256-GCM.
- * Uses TOTP_ENCRYPTION_KEY or falls back to SHA-256 hash of JWT_SECRET.
- */
 function getEncryptionKey() {
   const secret = process.env.TOTP_ENCRYPTION_KEY || process.env.JWT_SECRET;
   if (!secret) {
@@ -17,11 +13,7 @@ function getEncryptionKey() {
   return crypto.createHash('sha256').update(String(secret)).digest();
 }
 
-/**
- * Encrypts a plaintext secret using authenticated AES-256-GCM.
- * @param {string} plaintext
- * @returns {string} ivHex:authTagHex:encryptedHex
- */
+// Encrypts plaintext secret using AES-256-GCM; returns ivHex:authTagHex:encryptedHex
 export function encryptSecret(plaintext) {
   if (!plaintext) return null;
   const key = getEncryptionKey();
@@ -33,11 +25,6 @@ export function encryptSecret(plaintext) {
   return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
 }
 
-/**
- * Decrypts a ciphertext encrypted with AES-256-GCM.
- * @param {string} ciphertext
- * @returns {string} plaintext
- */
 export function decryptSecret(ciphertext) {
   if (!ciphertext) return null;
   const parts = ciphertext.split(':');
@@ -55,22 +42,10 @@ export function decryptSecret(ciphertext) {
   return decrypted;
 }
 
-/**
- * Generates a cryptographically random Base32 TOTP secret.
- * @returns {string} Base32 secret
- */
 export function generateTotpSecret() {
   return generateSecret();
 }
 
-/**
- * Generates an interoperable otpauth:// URI for authenticator applications.
- * @param {Object} params
- * @param {string} params.email User email
- * @param {string} params.secret Plaintext Base32 secret
- * @param {string} [params.issuer='UTSAV'] Application name
- * @returns {string}
- */
 export function generateTotpUri({ email, secret, issuer = 'UTSAV' }) {
   return generateURI({
     issuer,
@@ -79,11 +54,6 @@ export function generateTotpUri({ email, secret, issuer = 'UTSAV' }) {
   });
 }
 
-/**
- * Generates a Data URL (base64 PNG) of the QR code for enrollment.
- * @param {string} uri otpauth:// URI
- * @returns {Promise<string>}
- */
 export async function generateQrCode(uri) {
   return await QRCode.toDataURL(uri, {
     errorCorrectionLevel: 'M',
@@ -96,14 +66,7 @@ export async function generateQrCode(uri) {
   });
 }
 
-/**
- * Verifies a 6-digit TOTP code with time-drift tolerance and replay prevention.
- * @param {Object} params
- * @param {string} params.token 6-digit candidate code
- * @param {string} params.secret Plaintext Base32 secret
- * @param {number} [params.lastAcceptedStep=0] The highest counter/step previously accepted
- * @returns {{ valid: boolean, timeStep?: number, reason?: string }}
- */
+// Verifies a 6-digit TOTP code with 30s drift tolerance and replay prevention
 export function verifyTotpCode({ token, secret, lastAcceptedStep = 0 }) {
   if (!token || !secret) {
     return { valid: false, reason: 'missing_parameters' };
@@ -133,17 +96,12 @@ export function verifyTotpCode({ token, secret, lastAcceptedStep = 0 }) {
   return { valid: true, timeStep: result.timeStep };
 }
 
-/**
- * Generates a set of 8 cryptographically secure recovery codes.
- * Format: 4-4-4 uppercase alphanumeric (e.g. A3F9-8KD2-9LM1)
- * @returns {{ plainCodes: string[], hashedRecords: Array<{ codeHash: string, used: boolean }> }}
- */
+// Generates 8 recovery codes formatted as 4-4-4 uppercase alphanumeric (e.g. A3F9-8KD2-9LM1)
 export function generateRecoveryCodes(count = 8) {
   const plainCodes = [];
   const hashedRecords = [];
 
   for (let i = 0; i < count; i++) {
-    // 6 random bytes = 12 hex chars -> 4-4-4 format
     const hex = crypto.randomBytes(6).toString('hex').toUpperCase();
     const formatted = `${hex.substring(0, 4)}-${hex.substring(4, 8)}-${hex.substring(8, 12)}`;
     plainCodes.push(formatted);
@@ -158,22 +116,11 @@ export function generateRecoveryCodes(count = 8) {
   return { plainCodes, hashedRecords };
 }
 
-/**
- * Hashes a recovery code with SHA-256 for secure storage.
- * @param {string} code
- * @returns {string}
- */
 export function hashRecoveryCode(code) {
   const normalized = String(code).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   return crypto.createHash('sha256').update(normalized).digest('hex');
 }
 
-/**
- * Checks a submitted recovery code against stored hashed recovery codes.
- * @param {string} submittedCode
- * @param {Array<{ codeHash: string, used: boolean }>} recoveryCodes
- * @returns {{ match: boolean, index: number }}
- */
 export function verifyRecoveryCode(submittedCode, recoveryCodes = []) {
   if (!submittedCode || !Array.isArray(recoveryCodes)) {
     return { match: false, index: -1 };
