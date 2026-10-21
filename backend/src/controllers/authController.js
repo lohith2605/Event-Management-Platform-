@@ -30,15 +30,16 @@ export const is2FARequired = (user) => {
 
 /**
  * Initiate a 2FA challenge (either Authenticator TOTP or Email OTP).
+ * but for the admin there is only one option TOTP
  */
 export const initiate2FAChallenge = async (user, res) => {
   const tempToken = generateTemp2FAToken(user._id);
 
-  // Admin accounts MUST use Authenticator TOTP and NEVER depend on email OTP delivery
+  // Admin accounts MUST use Authenticator TOTP and NEVER depend on email OTP delivery becuase we are using test admin email
   const isAuthenticator = user.role === 'admin' || user.twoFactorMethod === 'authenticator';
 
   if (isAuthenticator) {
-    // If admin has not yet completed authenticator enrollment, guide them to secure setup
+    // If admin has not yet completed authenticator enrollment, guide them to secure setup using QR
     if (!user.totpEnrolled) {
       return res.status(200).json({
         success: true,
@@ -63,7 +64,7 @@ export const initiate2FAChallenge = async (user, res) => {
   // Regular users with Email OTP method
   const otp = generateOtp();
   const otpHash = hashOtp(otp);
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes is the OTP validation
 
   user.twoFactorOtpHash = otpHash;
   user.twoFactorOtpExpiresAt = expiresAt;
@@ -135,7 +136,7 @@ export const register = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Passwords do not match.' });
     }
 
-    // 2. Strict Role Security: Deny self-registering as 'admin'
+    // 2. Strict Role Security: Deny self-registering as 'admin' admin acc will not be used as atendee or organizer acc
     const targetRole = role ? role.toLowerCase().trim() : 'attendee';
     if (targetRole === 'admin') {
       return res.status(403).json({
