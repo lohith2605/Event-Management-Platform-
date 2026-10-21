@@ -26,6 +26,15 @@ export function SocketProvider({ children }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Dismiss all in-app chat toasts matching a specific conversation ID
+  const dismissChatToast = useCallback((conversationId) => {
+    if (!conversationId) return;
+    const targetIdStr = conversationId.toString();
+    setToasts((prev) =>
+      prev.filter((t) => !t.conversationId || t.conversationId.toString() !== targetIdStr)
+    );
+  }, []);
+
   // Safely display a visible toast with de-duplication against repeated events
   const addToast = useCallback((notification) => {
     if (!notification) return;
@@ -68,12 +77,18 @@ export function SocketProvider({ children }) {
     setToasts((prev) => [toastItem, ...prev.slice(0, 3)]); // Maximum 4 toasts stacked
   }, []);
 
-  // Expose dev helper for instant E2E toast inspection
+  // Expose dev helpers for instant E2E toast inspection and dismissal
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.__utsavAddToast = addToast;
+      window.__utsavDismissChatToast = dismissChatToast;
     }
-  }, [addToast]);
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.__utsavDismissChatToast;
+      }
+    };
+  }, [addToast, dismissChatToast]);
 
   // Fetch initial notifications and unread count from database
   const refreshNotifications = useCallback(async () => {
@@ -205,14 +220,21 @@ export function SocketProvider({ children }) {
       // 1. Redundancy check: Avoid popup only if attendee is currently actively interacting with this conversation with window focus
       const activeConvId = typeof window !== 'undefined' ? window.__utsavActiveConversationId : null;
       const isDrawerOpen = typeof window !== 'undefined' ? window.__utsavIsChatDrawerOpen : false;
-      const isViewingActive = activeConvId && activeConvId.toString() === payload.conversationId.toString();
+      const isViewingActive = Boolean(activeConvId && activeConvId.toString() === payload.conversationId.toString());
+      const isPathMessages =
+        typeof window !== 'undefined' &&
+        typeof window.location?.pathname === 'string' &&
+        (window.location.pathname.includes('/messages') ||
+          (window.location.pathname.includes('/organizer') && window.location.search?.includes('tab=messages')));
+
+      const isConversationOpen =
+        typeof window !== 'undefined' && typeof window.__utsavIsConversationOpen === 'function'
+          ? window.__utsavIsConversationOpen(payload.conversationId)
+          : isViewingActive && (isDrawerOpen || isPathMessages);
+
       const isWindowFocused = typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : true;
       const isDocumentVisible = typeof document !== 'undefined' ? !document.hidden : true;
-      const isActivelyViewingConversation =
-        isDocumentVisible &&
-        isWindowFocused &&
-        isViewingActive &&
-        (isDrawerOpen || (typeof window !== 'undefined' && window.location.pathname.includes('/messages')));
+      const isActivelyViewingConversation = isDocumentVisible && isWindowFocused && isConversationOpen;
 
       if (isActivelyViewingConversation) {
         return;
@@ -229,18 +251,20 @@ export function SocketProvider({ children }) {
         toastedIdsRef.current.delete(dedupKey);
       }, 10000);
 
-      // 3. Display visible on-screen popup with actual message text
-      addToast({
-        _id: `toast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        title: `New message from ${senderName}`,
-        message: messageText,
-        type: 'chat_message',
-        conversationId: payload.conversationId,
-        eventId: payload.eventId,
-        senderName,
-        link: '/attendee/messages',
-        createdAt: new Date().toISOString(),
-      });
+      // 3. Display in-app toast only if the conversation is not already open
+      if (!isConversationOpen) {
+        addToast({
+          _id: `toast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          title: `New message from ${senderName}`,
+          message: messageText,
+          type: 'chat_message',
+          conversationId: payload.conversationId,
+          eventId: payload.eventId,
+          senderName,
+          link: '/attendee/messages',
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       // 4. Trigger native desktop system notification if browser permission is granted
       if (
@@ -271,6 +295,8 @@ export function SocketProvider({ children }) {
               window.focus();
             } catch (_) {}
 
+            dismissChatToast(payload.conversationId);
+
             if (typeof window.__utsavOpenConversation === 'function') {
               window.__utsavOpenConversation(payload.conversationId, { autoOpenDrawer: true });
             }
@@ -296,7 +322,7 @@ export function SocketProvider({ children }) {
       setSocket(null);
       setIsConnected(false);
     };
-  }, [isAuthenticated, user?._id, refreshNotifications, addToast]);
+  }, [isAuthenticated, user?._id, refreshNotifications, addToast, dismissChatToast]);
 
   // Mark single notification as read
   const markAsRead = async (id) => {
@@ -346,6 +372,7 @@ export function SocketProvider({ children }) {
     latestNotification,
     toasts,
     dismissToast,
+    dismissChatToast,
     addToast,
     loading,
     refreshNotifications,

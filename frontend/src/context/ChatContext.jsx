@@ -15,7 +15,7 @@ const ChatContext = createContext(null);
 
 export function ChatProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
-  const { socket, isConnected } = useSocket();
+  const { socket, isConnected, dismissChatToast } = useSocket();
 
   // State
   const [conversations, setConversations] = useState([]);
@@ -47,6 +47,39 @@ export function ChatProvider({ children }) {
       window.__utsavIsChatDrawerOpen = isChatDrawerOpen;
     }
   }, [isChatDrawerOpen]);
+
+  // Determine if a given conversation is actively open on screen in UTSAV
+  const isConversationActiveOnScreen = useCallback(
+    (convId) => {
+      if (!convId || !activeConversation?._id) return false;
+      if (activeConversation._id.toString() !== convId.toString()) return false;
+
+      // Chat drawer is open
+      if (isChatDrawerOpen) return true;
+
+      // Or on messages page / tab
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname || '';
+        const search = window.location.search || '';
+        if (path.includes('/messages')) return true;
+        if (path.includes('/organizer') && search.includes('tab=messages')) return true;
+      }
+
+      return false;
+    },
+    [activeConversation, isChatDrawerOpen]
+  );
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__utsavIsConversationOpen = isConversationActiveOnScreen;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.__utsavIsConversationOpen;
+      }
+    };
+  }, [isConversationActiveOnScreen]);
 
   const typingTimeoutRef = useRef(null);
 
@@ -172,6 +205,21 @@ export function ChatProvider({ children }) {
 
       if (!conv || !convId) return;
 
+      // Dismiss any in-app chat toasts for this conversation
+      if (typeof dismissChatToast === 'function') {
+        dismissChatToast(convId);
+      } else if (typeof window !== 'undefined' && typeof window.__utsavDismissChatToast === 'function') {
+        window.__utsavDismissChatToast(convId);
+      }
+
+      // Synchronously record active conversation ID and drawer state
+      if (typeof window !== 'undefined') {
+        window.__utsavActiveConversationId = convId.toString();
+        if (autoOpenDrawer) {
+          window.__utsavIsChatDrawerOpen = true;
+        }
+      }
+
       // Leave previous room if changing conversation
       if (
         activeConversationRef.current &&
@@ -214,7 +262,7 @@ export function ChatProvider({ children }) {
         setLoadingMessages(false);
       }
     },
-    [conversations, socket, markAsRead]
+    [conversations, socket, markAsRead, dismissChatToast]
   );
 
   // Expose openConversation to window context for native desktop notification click handling
@@ -272,6 +320,10 @@ export function ChatProvider({ children }) {
     }
     setActiveConversation(null);
     setIsChatDrawerOpen(false);
+    if (typeof window !== 'undefined') {
+      window.__utsavActiveConversationId = null;
+      window.__utsavIsChatDrawerOpen = false;
+    }
     setMessages([]);
     setTypingUsers(new Map());
     setChatError(null);
@@ -285,6 +337,9 @@ export function ChatProvider({ children }) {
       });
     }
     setActiveConversation(null);
+    if (typeof window !== 'undefined') {
+      window.__utsavActiveConversationId = null;
+    }
     setMessages([]);
     setTypingUsers(new Map());
     setChatError(null);
