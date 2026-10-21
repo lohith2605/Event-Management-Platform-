@@ -10,14 +10,25 @@ import {
   AlertTriangle,
   Bell,
   ArrowRight,
+  MessageSquare,
 } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
+import { useChat } from '../context/ChatContext';
 
 /**
  * Visual configuration and custom headlines per notification type
  */
 const getToastMeta = (type) => {
   switch (type) {
+    case 'chat_message':
+      return {
+        tag: 'New Message',
+        tagBg: 'bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)] border-[var(--color-primary-action)]/30',
+        borderColor: 'border-[var(--color-primary-action)]/40',
+        accentColor: 'bg-[var(--color-primary-action)]',
+        icon: MessageSquare,
+        actionLabel: 'Open chat',
+      };
     case 'event_published':
       return {
         tag: 'New Announcement',
@@ -134,9 +145,10 @@ function ToastItem({ toast, onDismiss, onAction }) {
     <div
       role="alert"
       aria-live="polite"
+      onClick={handleActionClick}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
-      className={`pointer-events-auto relative w-full overflow-hidden rounded-2xl bg-[var(--color-card-bg)]/95 backdrop-blur-md border ${borderColor} shadow-2xl transition-all duration-200 hover:shadow-3xl animate-in fade-in slide-in-from-top-4`}
+      className={`pointer-events-auto relative w-full overflow-hidden rounded-2xl bg-[var(--color-card-bg)]/95 backdrop-blur-md border ${borderColor} shadow-2xl transition-all duration-200 hover:shadow-3xl animate-in fade-in slide-in-from-top-4 cursor-pointer`}
     >
       {/* Top Tag & Header */}
       <div className="p-4 space-y-2">
@@ -157,7 +169,10 @@ function ToastItem({ toast, onDismiss, onAction }) {
           {/* Close Button */}
           <button
             type="button"
-            onClick={() => onDismiss(toast.id)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismiss(toast.id);
+            }}
             aria-label="Dismiss notification"
             className="p-1 rounded-lg text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
           >
@@ -178,7 +193,7 @@ function ToastItem({ toast, onDismiss, onAction }) {
         </div>
 
         {/* Action Button */}
-        {toast.link && (
+        {(toast.link || toast.conversationId) && (
           <div className="pt-1 flex items-center justify-between">
             <button
               type="button"
@@ -214,18 +229,26 @@ function ToastItem({ toast, onDismiss, onAction }) {
  */
 export default function NotificationToastContainer() {
   const { toasts, dismissToast, markAsRead } = useSocket();
+  const { openConversation } = useChat();
   const navigate = useNavigate();
 
   if (!toasts || toasts.length === 0) return null;
 
   const handleAction = async (toast) => {
-    // 1. Mark as read in MongoDB & local state
+    // 1. Mark as read in MongoDB & local state if persistent notification
     if (toast.notification?._id) {
       await markAsRead(toast.notification._id);
     }
     // 2. Dismiss toast
     dismissToast(toast.id);
-    // 3. Navigate to target URL
+    // 3. Open conversation directly if chat message with conversationId
+    if (toast.type === 'chat_message' && toast.conversationId) {
+      if (typeof openConversation === 'function') {
+        openConversation(toast.conversationId, { autoOpenDrawer: true });
+        return;
+      }
+    }
+    // 4. Navigate to target URL
     if (toast.link) {
       navigate(toast.link);
     }

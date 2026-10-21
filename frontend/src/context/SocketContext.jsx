@@ -58,6 +58,8 @@ export function SocketProvider({ children }) {
       title: notification.title || 'Notification',
       message: notification.message || '',
       link: notification.link || '',
+      conversationId: notification.conversationId || notification.metadata?.conversationId || '',
+      senderName: notification.senderName || '',
       createdAt: notification.createdAt || new Date().toISOString(),
     };
 
@@ -191,7 +193,55 @@ export function SocketProvider({ children }) {
       }
     });
 
+    // Real-time private chat notification receiver for organizer replies
+    const handleChatNotification = (payload) => {
+      if (!payload || !payload.conversationId) return;
+
+      const messageText = typeof payload.text === 'string' ? payload.text.trim() : '';
+      if (!messageText) return;
+
+      // 1. Redundancy check: Avoid popup if attendee is currently viewing this conversation
+      const activeConvId = typeof window !== 'undefined' ? window.__utsavActiveConversationId : null;
+      const isDrawerOpen = typeof window !== 'undefined' ? window.__utsavIsChatDrawerOpen : false;
+      const isViewingActive = activeConvId && activeConvId.toString() === payload.conversationId.toString();
+      if (isViewingActive && (isDrawerOpen || (typeof window !== 'undefined' && window.location.pathname.includes('/messages')))) {
+        return;
+      }
+
+      // 2. De-duplication check: Prevent duplicate popups within 10s for the exact same conversation and message snippet
+      const senderName = payload.senderName || 'Organizer';
+      const dedupKey = `chat_${payload.conversationId}_${messageText.substring(0, 50)}`;
+      if (toastedIdsRef.current.has(dedupKey)) {
+        return;
+      }
+      toastedIdsRef.current.add(dedupKey);
+      setTimeout(() => {
+        toastedIdsRef.current.delete(dedupKey);
+      }, 10000);
+
+      // 3. Display visible on-screen popup with actual message text
+      addToast({
+        _id: `toast_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        title: `New message from ${senderName}`,
+        message: messageText,
+        type: 'chat_message',
+        conversationId: payload.conversationId,
+        eventId: payload.eventId,
+        senderName,
+        link: '/attendee/messages',
+        createdAt: new Date().toISOString(),
+      });
+
+      // 4. Synchronize conversation state / badges if listener is active
+      if (typeof window !== 'undefined' && typeof window.__utsavRefreshConversations === 'function') {
+        window.__utsavRefreshConversations();
+      }
+    };
+
+    socketClient.on('chat_notification', handleChatNotification);
+
     return () => {
+      socketClient.off('chat_notification', handleChatNotification);
       socketClient.disconnect();
       socketRef.current = null;
       setSocket(null);

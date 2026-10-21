@@ -37,7 +37,16 @@ export function ChatProvider({ children }) {
   const activeConversationRef = useRef(activeConversation);
   useEffect(() => {
     activeConversationRef.current = activeConversation;
+    if (typeof window !== 'undefined') {
+      window.__utsavActiveConversationId = activeConversation?._id ? activeConversation._id.toString() : null;
+    }
   }, [activeConversation]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__utsavIsChatDrawerOpen = isChatDrawerOpen;
+    }
+  }, [isChatDrawerOpen]);
 
   const typingTimeoutRef = useRef(null);
 
@@ -63,6 +72,17 @@ export function ChatProvider({ children }) {
       setLoadingConversations(false);
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__utsavRefreshConversations = refreshConversations;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.__utsavRefreshConversations;
+      }
+    };
+  }, [refreshConversations]);
 
   useEffect(() => {
     if (isAuthenticated) {
