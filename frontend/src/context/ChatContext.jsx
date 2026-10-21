@@ -217,6 +217,18 @@ export function ChatProvider({ children }) {
     [conversations, socket, markAsRead]
   );
 
+  // Expose openConversation to window context for native desktop notification click handling
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__utsavOpenConversation = openConversation;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.__utsavOpenConversation;
+      }
+    };
+  }, [openConversation]);
+
   // 4. Start or retrieve conversation atomically by event ID and type
   const startOrOpenConversation = useCallback(
     async ({ eventId, type, attendeeId, autoOpenDrawer = true }) => {

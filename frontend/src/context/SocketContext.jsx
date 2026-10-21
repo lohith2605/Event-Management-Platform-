@@ -40,14 +40,16 @@ export function SocketProvider({ children }) {
     toastedIdsRef.current.add(notifId);
 
     // Additional event-level de-duplication for published events (user room + role room)
-    const eventId = notification.metadata?.eventId || notification.eventId;
-    if (eventId) {
-      const eventKey = `pub_${eventId}`;
-      if (eventKey !== notifId) {
-        if (toastedIdsRef.current.has(eventKey)) {
-          return;
+    if (notification.type === 'event_published') {
+      const eventId = notification.metadata?.eventId || notification.eventId;
+      if (eventId) {
+        const eventKey = `pub_${eventId}`;
+        if (eventKey !== notifId) {
+          if (toastedIdsRef.current.has(eventKey)) {
+            return;
+          }
+          toastedIdsRef.current.add(eventKey);
         }
-        toastedIdsRef.current.add(eventKey);
       }
     }
 
@@ -200,16 +202,24 @@ export function SocketProvider({ children }) {
       const messageText = typeof payload.text === 'string' ? payload.text.trim() : '';
       if (!messageText) return;
 
-      // 1. Redundancy check: Avoid popup if attendee is currently viewing this conversation
+      // 1. Redundancy check: Avoid popup only if attendee is currently actively interacting with this conversation with window focus
       const activeConvId = typeof window !== 'undefined' ? window.__utsavActiveConversationId : null;
       const isDrawerOpen = typeof window !== 'undefined' ? window.__utsavIsChatDrawerOpen : false;
       const isViewingActive = activeConvId && activeConvId.toString() === payload.conversationId.toString();
-      if (isViewingActive && (isDrawerOpen || (typeof window !== 'undefined' && window.location.pathname.includes('/messages')))) {
+      const isWindowFocused = typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+      const isDocumentVisible = typeof document !== 'undefined' ? !document.hidden : true;
+      const isActivelyViewingConversation =
+        isDocumentVisible &&
+        isWindowFocused &&
+        isViewingActive &&
+        (isDrawerOpen || (typeof window !== 'undefined' && window.location.pathname.includes('/messages')));
+
+      if (isActivelyViewingConversation) {
         return;
       }
 
       // 2. De-duplication check: Prevent duplicate popups within 10s for the exact same conversation and message snippet
-      const senderName = payload.senderName || 'Organizer';
+      const senderName = payload.senderName && payload.senderName.trim() ? payload.senderName.trim() : 'Organizer';
       const dedupKey = `chat_${payload.conversationId}_${messageText.substring(0, 50)}`;
       if (toastedIdsRef.current.has(dedupKey)) {
         return;
@@ -232,7 +242,46 @@ export function SocketProvider({ children }) {
         createdAt: new Date().toISOString(),
       });
 
-      // 4. Synchronize conversation state / badges if listener is active
+      // 4. Trigger native desktop system notification if browser permission is granted
+      if (
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          console.log('[NativeNotifDiag] Triggering native desktop notification for incoming organizer reply');
+          const sysNotif = new Notification(senderName, {
+            body: messageText,
+            tag: `utsav_chat_${payload.conversationId}`,
+            requireInteraction: true,
+          });
+
+          sysNotif.onshow = () => {
+            console.log('[NativeNotifDiag] sysNotif event: show');
+          };
+          sysNotif.onerror = (err) => {
+            console.warn('[NativeNotifDiag] sysNotif event: error', err);
+          };
+          sysNotif.onclose = () => {
+            console.log('[NativeNotifDiag] sysNotif event: close');
+          };
+          sysNotif.onclick = () => {
+            console.log('[NativeNotifDiag] sysNotif event: click');
+            try {
+              window.focus();
+            } catch (_) {}
+
+            if (typeof window.__utsavOpenConversation === 'function') {
+              window.__utsavOpenConversation(payload.conversationId, { autoOpenDrawer: true });
+            }
+            sysNotif.close();
+          };
+        } catch (err) {
+          console.warn('[NativeNotifDiag] Exception constructing Notification:', err?.message || err);
+        }
+      }
+
+      // 5. Synchronize conversation state / badges if listener is active
       if (typeof window !== 'undefined' && typeof window.__utsavRefreshConversations === 'function') {
         window.__utsavRefreshConversations();
       }

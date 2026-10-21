@@ -102,6 +102,87 @@ export default function NotificationDropdown({ className = '', align = 'right' }
     loading,
   } = useSocket();
 
+  // Desktop notification permission tracking
+  const [desktopPermission, setDesktopPermission] = useState(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'unsupported';
+  });
+
+  // Re-sync permission state whenever the dropdown popover opens
+  useEffect(() => {
+    if (isOpen && typeof window !== 'undefined' && 'Notification' in window) {
+      setDesktopPermission(Notification.permission);
+    }
+  }, [isOpen]);
+
+  const handleRequestPermission = async (e) => {
+    e.stopPropagation();
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'denied') return; // Do not repeatedly prompt if denied
+
+    try {
+      const res = await Notification.requestPermission();
+      setDesktopPermission(res);
+    } catch (err) {
+      console.warn('Failed to request desktop notification permission:', err?.message || err);
+    }
+  };
+
+  const handleTestNotification = (e) => {
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+    console.log('[NativeNotifDiag] --- Diagnostic Notification Test Triggered ---');
+    console.log('[NativeNotifDiag] Notification.permission:', typeof Notification !== 'undefined' ? Notification.permission : 'undefined');
+    console.log('[NativeNotifDiag] document.hidden:', typeof document !== 'undefined' ? document.hidden : 'undefined');
+    console.log('[NativeNotifDiag] document.hasFocus():', typeof document !== 'undefined' && typeof document.hasFocus === 'function' ? document.hasFocus() : 'undefined');
+
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      console.warn('[NativeNotifDiag] Notifications API not available in window');
+      return;
+    }
+
+    try {
+      const notif = new Notification('UTSAV Desktop Alert', {
+        body: 'Windows native notifications are active and working.',
+        tag: `utsav_diag_${Date.now()}`,
+        requireInteraction: true,
+      });
+
+      console.log('[NativeNotifDiag] Notification instance created:', notif);
+
+      notif.onshow = () => {
+        console.log('[NativeNotifDiag] EVENT: onshow fired');
+      };
+      notif.onerror = (err) => {
+        console.warn('[NativeNotifDiag] EVENT: onerror fired', err);
+      };
+      notif.onclose = () => {
+        console.log('[NativeNotifDiag] EVENT: onclose fired');
+      };
+      notif.onclick = () => {
+        console.log('[NativeNotifDiag] EVENT: onclick fired');
+        try {
+          window.focus();
+        } catch (_) {}
+        notif.close();
+      };
+    } catch (err) {
+      console.error('[NativeNotifDiag] EXCEPTION during new Notification():', err?.message || err);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__utsavTestNativeNotification = handleTestNotification;
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        delete window.__utsavTestNativeNotification;
+      }
+    };
+  }, []);
+
   // Close dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -227,6 +308,61 @@ export default function NotificationDropdown({ className = '', align = 'right' }
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Desktop Notification Permission & Status Bar */}
+          <div className="px-4 py-2 border-b border-[var(--color-borders)]/60 bg-[var(--color-secondary-bg)]/25 flex items-center justify-between gap-2 text-xs">
+            {desktopPermission === 'granted' ? (
+              <div className="flex items-center justify-between w-full">
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Desktop alerts enabled</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    id="test-desktop-alert-btn"
+                    type="button"
+                    onClick={handleTestNotification}
+                    className="text-[10px] font-semibold text-[var(--color-primary-action)] hover:underline cursor-pointer"
+                    title="Send a sample test notification to Windows Notification Center"
+                  >
+                    Test alert
+                  </button>
+                  <span className="text-[10px] text-[var(--color-secondary-text)]/75">
+                    Live replies
+                  </span>
+                </div>
+              </div>
+            ) : desktopPermission === 'denied' ? (
+              <div className="flex items-center justify-between w-full text-[11px]">
+                <span
+                  className="text-amber-600 dark:text-amber-400 font-medium truncate"
+                  title="Desktop alerts are blocked in your browser site permissions."
+                >
+                  Desktop alerts blocked in browser
+                </span>
+                <span className="text-[10px] text-[var(--color-secondary-text)]/75 shrink-0">
+                  Site settings
+                </span>
+              </div>
+            ) : desktopPermission === 'default' ? (
+              <div className="flex items-center justify-between w-full gap-2">
+                <span className="text-[11px] text-[var(--color-secondary-text)] font-medium leading-tight">
+                  Enable desktop alerts for organizer replies
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRequestPermission}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-[var(--color-primary-action)] text-[var(--color-primary-text)] hover:bg-[var(--color-primary-action-hover)] transition-all cursor-pointer shadow-2xs shrink-0 active:scale-95"
+                >
+                  Enable
+                </button>
+              </div>
+            ) : (
+              <span className="text-[11px] text-[var(--color-secondary-text)]/70">
+                Desktop notifications not supported
+              </span>
+            )}
           </div>
 
           {/* Notification Items List */}
