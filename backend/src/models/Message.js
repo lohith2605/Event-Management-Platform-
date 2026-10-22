@@ -1,5 +1,79 @@
 import mongoose from 'mongoose';
 
+export const ALLOWED_EMOJIS = ['👍', '❤️', '🎉', '😂', '😮', '🙏'];
+
+const ReactionSchema = new mongoose.Schema(
+  {
+    emoji: {
+      type: String,
+      required: true,
+      enum: ALLOWED_EMOJIS,
+    },
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: false,
+    },
+    userName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const AttachmentSchema = new mongoose.Schema(
+  {
+    url: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    publicId: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    originalName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    mimeType: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    size: {
+      type: Number,
+      default: 0,
+    },
+    resourceType: {
+      type: String,
+      default: 'image',
+    },
+    width: {
+      type: Number,
+      default: null,
+    },
+    height: {
+      type: Number,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
 const MessageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -26,10 +100,27 @@ const MessageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      required: [true, 'Message text is required'],
       trim: true,
-      minlength: [1, 'Message cannot be empty'],
+      default: '',
       maxlength: [2000, 'Message cannot exceed 2000 characters'],
+      validate: {
+        validator: function (val) {
+          const hasText = typeof val === 'string' && val.trim().length > 0;
+          const hasAttachment =
+            (Array.isArray(this.attachments) && this.attachments.length > 0) ||
+            Boolean(this.attachment && this.attachment.url);
+          return hasText || hasAttachment;
+        },
+        message: 'Message must contain text content or an attachment.',
+      },
+    },
+    attachments: {
+      type: [AttachmentSchema],
+      default: [],
+    },
+    attachment: {
+      type: AttachmentSchema,
+      default: null,
     },
     readBy: [
       {
@@ -44,6 +135,26 @@ const MessageSchema = new mongoose.Schema(
         },
       },
     ],
+    reactions: {
+      type: [ReactionSchema],
+      default: [],
+    },
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    editedAt: {
+      type: Date,
+      default: null,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

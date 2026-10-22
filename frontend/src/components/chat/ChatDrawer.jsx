@@ -28,6 +28,7 @@ export default function ChatDrawer() {
     typingUsers,
     chatError,
     isConnected,
+    otherParticipantId,
   } = useChat();
 
   const navigate = useNavigate();
@@ -67,16 +68,6 @@ export default function ChatDrawer() {
   }, [isChatDrawerOpen]);
 
   if (!isChatDrawerOpen) return null;
-
-  // Determine other participant ID for read receipts
-  let otherParticipantId = null;
-  if (activeConversation) {
-    if (activeConversation.type === 'admin_organizer') {
-      otherParticipantId = activeConversation.organizerId?._id || activeConversation.organizerId;
-    } else {
-      otherParticipantId = activeConversation.attendeeId?._id || activeConversation.attendeeId;
-    }
-  }
 
   const drawerContent = (
     <div className="fixed inset-0 z-50 flex justify-end animate-fade-in">

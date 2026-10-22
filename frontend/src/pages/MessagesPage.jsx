@@ -33,6 +33,7 @@ export default function MessagesPage() {
     refreshConversations,
     setIsChatDrawerOpen,
     sendingMessage,
+    otherParticipantId,
   } = useChat();
 
   // Close the quick-access slide-over drawer when entering the dedicated Messages page
@@ -113,16 +114,6 @@ export default function MessagesPage() {
       openConversation(targetId, { autoOpenDrawer: false });
     }
   }, [activeConversation?._id, convIdFromUrl, openConversation]);
-
-  // Determine other participant ID for read receipts
-  let otherParticipantId = null;
-  if (activeConversation) {
-    if (activeConversation.type === 'admin_organizer') {
-      otherParticipantId = activeConversation.organizerId?._id || activeConversation.organizerId;
-    } else {
-      otherParticipantId = activeConversation.attendeeId?._id || activeConversation.attendeeId;
-    }
-  }
 
   // On mobile or desktop: indicate deep-link opening state or error
   const hasDeepLinkError = Boolean(!activeConversation && convIdFromUrl && chatError);

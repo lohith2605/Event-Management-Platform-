@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Conversation from '../models/Conversation.js';
-import Message from '../models/Message.js';
+import Message, { ALLOWED_EMOJIS } from '../models/Message.js';
 import { verifyConversationAccess } from './chatService.js';
 import logger from '../utils/logger.js';
 
@@ -193,7 +193,7 @@ export const initSocket = (httpServer) => {
      */
     socket.on('send_message', async (data, callback) => {
       try {
-        const { conversationId, text } = data || {};
+        const { conversationId, text, attachment, attachments } = data || {};
 
         if (!conversationId || !mongoose.Types.ObjectId.isValid(conversationId)) {
           const errRes = { success: false, error: 'Invalid conversation ID format.' };
@@ -202,14 +202,35 @@ export const initSocket = (httpServer) => {
           return;
         }
 
-        if (!text || typeof text !== 'string' || !text.trim()) {
-          const errRes = { success: false, error: 'Message text cannot be empty.' };
+        // Validate and sanitize attachments
+        const cleanAttachments = [];
+        if (
+          attachment &&
+          typeof attachment.url === 'string' &&
+          attachment.url.startsWith('https://res.cloudinary.com/')
+        ) {
+          cleanAttachments.push(attachment);
+        } else if (Array.isArray(attachments)) {
+          attachments.forEach((att) => {
+            if (
+              att &&
+              typeof att.url === 'string' &&
+              att.url.startsWith('https://res.cloudinary.com/')
+            ) {
+              cleanAttachments.push(att);
+            }
+          });
+        }
+
+        const trimmedText = typeof text === 'string' ? text.trim() : '';
+
+        if (!trimmedText && cleanAttachments.length === 0) {
+          const errRes = { success: false, error: 'Message must contain text content or an attachment.' };
           if (typeof callback === 'function') callback(errRes);
           socket.emit('chat_error', errRes);
           return;
         }
 
-        const trimmedText = text.trim();
         if (trimmedText.length > 2000) {
           const errRes = { success: false, error: 'Message cannot exceed 2000 characters.' };
           if (typeof callback === 'function') callback(errRes);
@@ -241,12 +262,24 @@ export const initSocket = (httpServer) => {
           senderName: socket.user.name,
           senderRole: socket.user.role,
           text: trimmedText,
+          attachments: cleanAttachments,
+          attachment: cleanAttachments[0] || null,
           readBy: [{ userId: socket.user._id, readAt: new Date() }],
         });
 
+        let previewText = message.text;
+        if (!previewText && cleanAttachments.length > 0) {
+          const att = cleanAttachments[0];
+          if (att.resourceType === 'raw' || (att.mimeType && !att.mimeType.startsWith('image/'))) {
+            previewText = `📄 ${att.originalName || 'Document'}`;
+          } else {
+            previewText = '📷 Image';
+          }
+        }
+
         // Update conversation metadata
         conversation.lastMessage = {
-          text: message.text,
+          text: previewText,
           senderId: socket.user._id,
           senderName: socket.user.name,
           senderRole: socket.user.role,
@@ -294,14 +327,14 @@ export const initSocket = (httpServer) => {
               conversationId: conversation._id,
               eventId: conversation.eventId,
               senderName: socket.user.name,
-              text: message.text,
+              text: previewText,
             });
           } else {
             emitToUser(rId, 'chat_notification', {
               conversationId: conversation._id,
               eventId: conversation.eventId,
               senderName: socket.user.name,
-              text: message.text,
+              text: previewText,
             });
           }
         });
@@ -387,6 +420,312 @@ export const initSocket = (httpServer) => {
         if (typeof callback === 'function') callback({ success: true });
       } catch (err) {
         logger.error('Error in mark_read socket event:', err);
+      }
+    });
+
+    /**
+     * Toggle reaction on a message via socket with concurrency-safe atomic persistence
+     */
+    socket.on('toggle_reaction', async (data, callback) => {
+      try {
+        const { conversationId, messageId, emoji } = data || {};
+
+        if (!conversationId || !mongoose.Types.ObjectId.isValid(conversationId) ||
+            !messageId || !mongoose.Types.ObjectId.isValid(messageId)) {
+          const errRes = { success: false, error: 'Invalid conversation or message ID format.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        if (!emoji || typeof emoji !== 'string' || !ALLOWED_EMOJIS.includes(emoji)) {
+          const errRes = { success: false, error: `Invalid emoji. Supported: ${ALLOWED_EMOJIS.join(' ')}` };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+          const errRes = { success: false, error: 'Conversation not found.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const access = await verifyConversationAccess(socket.user, conversation);
+        if (!access.allowed) {
+          const errRes = { success: false, error: access.message || 'Access denied.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+        if (!message) {
+          const errRes = { success: false, error: 'Message not found in this conversation.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const userId = socket.user._id;
+        const userName = socket.user.name || 'User';
+
+        // 1. Try pulling if existing
+        let updatedMessage = await Message.findOneAndUpdate(
+          {
+            _id: messageId,
+            conversationId: conversation._id,
+            $or: [
+              { reactions: { $elemMatch: { emoji, userId } } },
+              { reactions: { $elemMatch: { emoji, user: userId } } },
+            ],
+          },
+          {
+            $pull: {
+              reactions: {
+                emoji,
+                $or: [{ userId }, { user: userId }],
+              },
+            },
+          },
+          { new: true }
+        );
+
+        // 2. If not pulled, push with atomic anti-duplication guard
+        if (!updatedMessage) {
+          updatedMessage = await Message.findOneAndUpdate(
+            {
+              _id: messageId,
+              conversationId: conversation._id,
+              reactions: {
+                $not: {
+                  $elemMatch: {
+                    emoji,
+                    $or: [{ userId }, { user: userId }],
+                  },
+                },
+              },
+            },
+            {
+              $push: {
+                reactions: {
+                  emoji,
+                  userId,
+                  userName,
+                  createdAt: new Date(),
+                },
+              },
+            },
+            { new: true }
+          );
+        }
+
+        // 3. Fallback to latest message if concurrent write
+        if (!updatedMessage) {
+          updatedMessage = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+        }
+
+        const reactions = updatedMessage ? updatedMessage.reactions || [] : [];
+
+        // Broadcast to all participants in this conversation
+        emitToConversation(conversation._id, 'message_reaction_updated', {
+          conversationId: conversation._id,
+          messageId: message._id,
+          reactions,
+        });
+
+        const successRes = { success: true, messageId: message._id, reactions };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in toggle_reaction socket event:', err);
+        const errRes = { success: false, error: 'Internal server error processing reaction.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Edit message via socket with strict author validation & persistence
+     */
+    socket.on('edit_message', async (data, callback) => {
+      try {
+        const { conversationId, messageId, text } = data || {};
+
+        if (
+          !conversationId || !mongoose.Types.ObjectId.isValid(conversationId) ||
+          !messageId || !mongoose.Types.ObjectId.isValid(messageId)
+        ) {
+          const errRes = { success: false, error: 'Invalid conversation or message ID format.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+        if (!message) {
+          const errRes = { success: false, error: 'Message not found in this conversation.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        // Enforce author ownership
+        if (message.senderId.toString() !== socket.userId) {
+          const errRes = { success: false, error: 'Forbidden: You can only edit your own messages.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        if (message.isDeleted) {
+          const errRes = { success: false, error: 'Cannot edit a message that has been deleted.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const trimmed = typeof text === 'string' ? text.trim() : '';
+        const hasAttachments =
+          (Array.isArray(message.attachments) && message.attachments.length > 0) ||
+          Boolean(message.attachment && message.attachment.url);
+
+        if (!trimmed && !hasAttachments) {
+          const errRes = { success: false, error: 'Message text cannot be empty.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        if (trimmed.length > 2000) {
+          const errRes = { success: false, error: 'Message cannot exceed 2000 characters.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        if (message.text === trimmed) {
+          const successRes = { success: true, message, unchanged: true };
+          if (typeof callback === 'function') callback(successRes);
+          return;
+        }
+
+        message.text = trimmed;
+        message.isEdited = true;
+        message.editedAt = new Date();
+        await message.save();
+
+        if (
+          conversation.lastMessage &&
+          conversation.lastMessage.createdAt &&
+          new Date(conversation.lastMessage.createdAt).getTime() === new Date(message.createdAt).getTime()
+        ) {
+          conversation.lastMessage.text = trimmed || (hasAttachments ? '📷 Image' : '');
+          await conversation.save();
+        }
+
+        emitToConversation(conversation._id, 'message_edited', {
+          conversationId: conversation._id,
+          message,
+        });
+
+        const successRes = { success: true, message };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in edit_message socket event:', err);
+        const errRes = { success: false, error: 'Internal server error editing message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Delete message via socket with strict author validation & soft-delete
+     */
+    socket.on('delete_message', async (data, callback) => {
+      try {
+        const { conversationId, messageId } = data || {};
+
+        if (
+          !conversationId || !mongoose.Types.ObjectId.isValid(conversationId) ||
+          !messageId || !mongoose.Types.ObjectId.isValid(messageId)
+        ) {
+          const errRes = { success: false, error: 'Invalid conversation or message ID format.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const conversation = await Conversation.findById(conversationId);
+        if (!conversation) {
+          const errRes = { success: false, error: 'Conversation not found.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const access = await verifyConversationAccess(socket.user, conversation);
+        if (!access.allowed) {
+          const errRes = { success: false, error: access.message || 'Access denied.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+        if (!message) {
+          const errRes = { success: false, error: 'Message not found in this conversation.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        // Enforce author ownership
+        if (message.senderId.toString() !== socket.userId) {
+          const errRes = { success: false, error: 'Forbidden: You can only delete your own messages.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        if (message.isDeleted) {
+          const errRes = { success: false, error: 'Message is already deleted.' };
+          if (typeof callback === 'function') callback(errRes);
+          socket.emit('chat_error', errRes);
+          return;
+        }
+
+        message.isDeleted = true;
+        message.deletedAt = new Date();
+        message.text = 'This message was deleted';
+        message.reactions = [];
+        message.attachments = [];
+        message.attachment = null;
+        await message.save();
+
+        if (
+          conversation.lastMessage &&
+          conversation.lastMessage.createdAt &&
+          new Date(conversation.lastMessage.createdAt).getTime() === new Date(message.createdAt).getTime()
+        ) {
+          conversation.lastMessage.text = 'This message was deleted';
+          await conversation.save();
+        }
+
+        emitToConversation(conversation._id, 'message_deleted', {
+          conversationId: conversation._id,
+          messageId: message._id,
+          message,
+        });
+
+        const successRes = { success: true, messageId: message._id, message };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in delete_message socket event:', err);
+        const errRes = { success: false, error: 'Internal server error deleting message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
       }
     });
 

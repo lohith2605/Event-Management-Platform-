@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useAuth } from './AuthContext';
 import { useSocket } from './SocketContext';
+import { getOtherParticipantId, extractId } from '../utils/chatUtils';
 import {
   fetchConversationsApi,
   fetchConversationByIdApi,
@@ -9,6 +10,12 @@ import {
   sendMessageApi,
   markConversationReadApi,
   fetchUnreadChatCountApi,
+  toggleReactionApi,
+  editMessageApi,
+  deleteMessageApi,
+  uploadChatAttachmentApi,
+  uploadChatImageApi,
+  downloadAttachmentApi,
 } from '../api/chat';
 
 const ChatContext = createContext(null);
@@ -41,6 +48,11 @@ export function ChatProvider({ children }) {
       window.__utsavActiveConversationId = activeConversation?._id ? activeConversation._id.toString() : null;
     }
   }, [activeConversation]);
+
+  // Target recipient participant ID for current active conversation
+  const otherParticipantId = useMemo(() => {
+    return getOtherParticipantId(activeConversation, user);
+  }, [activeConversation, user]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -380,12 +392,28 @@ export function ChatProvider({ children }) {
     }
   }, [activeConversation, loadingMoreMessages, hasMoreMessages, messages]);
 
-  // 7. Send message
+  // 7. Send message (supports text and/or image attachment)
   const sendMessage = useCallback(
-    async (text) => {
-      if (!activeConversation) return { success: false, error: 'No active conversation.' };
-      const trimmed = (text || '').trim();
-      if (!trimmed) return { success: false, error: 'Message cannot be empty.' };
+    async (payload) => {
+      const currentConv = activeConversation || activeConversationRef.current;
+      if (!currentConv) return { success: false, error: 'No active conversation.' };
+
+      let textVal = '';
+      let fileVal = null;
+      let attachmentVal = null;
+
+      if (typeof payload === 'string') {
+        textVal = payload;
+      } else if (payload && typeof payload === 'object') {
+        textVal = payload.text || '';
+        fileVal = payload.file || null;
+        attachmentVal = payload.attachment || null;
+      }
+
+      const trimmed = textVal.trim();
+      if (!trimmed && !fileVal && !attachmentVal) {
+        return { success: false, error: 'Message cannot be empty.' };
+      }
       if (trimmed.length > 2000) {
         return { success: false, error: 'Message cannot exceed 2000 characters.' };
       }
@@ -395,10 +423,28 @@ export function ChatProvider({ children }) {
 
       // Stop typing
       if (socket && socket.connected) {
-        socket.emit('typing_stop', { conversationId: activeConversation._id });
+        socket.emit('typing_stop', { conversationId: currentConv._id });
       }
 
       try {
+        // Upload attachment file first if provided
+        let attachment = attachmentVal;
+        if (fileVal) {
+          const uploadRes = await uploadChatAttachmentApi(currentConv._id, fileVal);
+          if (uploadRes && uploadRes.attachment) {
+            attachment = uploadRes.attachment;
+          } else {
+            throw new Error('Attachment upload failed.');
+          }
+        }
+
+        const messagePayload = {
+          conversationId: currentConv._id,
+          text: trimmed,
+          attachment,
+          attachments: attachment ? [attachment] : [],
+        };
+
         let sentMessage = null;
 
         // Try Socket.IO with acknowledgment first
@@ -406,11 +452,11 @@ export function ChatProvider({ children }) {
           const socketPromise = new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
               reject(new Error('Socket send timed out. Falling back to HTTP.'));
-            }, 3000);
+            }, 4000);
 
             socket.emit(
               'send_message',
-              { conversationId: activeConversation._id, text: trimmed },
+              messagePayload,
               (ack) => {
                 clearTimeout(timeout);
                 if (ack && ack.success) {
@@ -426,12 +472,12 @@ export function ChatProvider({ children }) {
             sentMessage = await socketPromise;
           } catch (socketErr) {
             console.warn('Socket message delivery failed, falling back to REST:', socketErr.message);
-            const restRes = await sendMessageApi(activeConversation._id, trimmed);
+            const restRes = await sendMessageApi(currentConv._id, messagePayload);
             sentMessage = restRes?.message;
           }
         } else {
           // Socket disconnected, send via REST
-          const restRes = await sendMessageApi(activeConversation._id, trimmed);
+          const restRes = await sendMessageApi(currentConv._id, messagePayload);
           sentMessage = restRes?.message;
         }
 
@@ -443,14 +489,26 @@ export function ChatProvider({ children }) {
             return [...prev, sentMessage];
           });
 
+          let previewText = sentMessage.text;
+          if (!previewText) {
+            const att = sentMessage.attachment || (sentMessage.attachments && sentMessage.attachments[0]);
+            if (att) {
+              if (att.resourceType === 'raw' || (att.mimeType && !att.mimeType.startsWith('image/'))) {
+                previewText = `📄 ${att.originalName || 'Document'}`;
+              } else {
+                previewText = '📷 Image';
+              }
+            }
+          }
+
           // Update lastMessage on conversation
           setConversations((prev) =>
             prev.map((c) =>
-              c._id === activeConversation._id
+              c._id === currentConv._id
                 ? {
                     ...c,
                     lastMessage: {
-                      text: sentMessage.text,
+                      text: previewText,
                       senderId: sentMessage.senderId,
                       senderName: sentMessage.senderName,
                       senderRole: sentMessage.senderRole,
@@ -500,7 +558,337 @@ export function ChatProvider({ children }) {
     [activeConversation, socket]
   );
 
-  // 9. Real-time socket event listeners
+  // Ensure the active conversation room is joined whenever socket connects or active conversation changes
+  useEffect(() => {
+    if (socket && isConnected && activeConversation?._id) {
+      socket.emit('join_conversation', {
+        conversationId: activeConversation._id.toString(),
+      });
+    }
+  }, [socket, isConnected, activeConversation?._id]);
+
+  // 9. Emoji reaction toggle with optimistic UI and server reconciliation
+  const toggleReaction = useCallback(
+    async (messageId, emoji) => {
+      const currentConv = activeConversation || activeConversationRef.current;
+      if (!currentConv || !messageId || !emoji) return;
+
+      const currentUserId = extractId(user?._id || user?.id || user);
+      if (!currentUserId) return;
+
+      const targetMsgId = extractId(messageId);
+      if (!targetMsgId) return;
+
+      // 1. Optimistic update
+      let snapshotMessages = null;
+      setMessages((prev) => {
+        snapshotMessages = prev;
+        return prev.map((msg) => {
+          const mId = extractId(msg._id || msg.id);
+          if (mId !== targetMsgId) return msg;
+
+          const currentReactions = Array.isArray(msg.reactions) ? msg.reactions : [];
+          const existingIndex = currentReactions.findIndex(
+            (r) => r.emoji === emoji && extractId(r.userId || r.user) === currentUserId
+          );
+
+          let updatedReactions;
+          if (existingIndex > -1) {
+            // Remove reaction
+            updatedReactions = currentReactions.filter((_, idx) => idx !== existingIndex);
+          } else {
+            // Add reaction
+            updatedReactions = [
+              ...currentReactions,
+              {
+                emoji,
+                userId: currentUserId,
+                userName: user?.name || 'User',
+                createdAt: new Date().toISOString(),
+              },
+            ];
+          }
+
+          return {
+            ...msg,
+            reactions: updatedReactions,
+          };
+        });
+      });
+
+      try {
+        let serverReactions = null;
+        const convId = extractId(currentConv._id || currentConv.id);
+
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket reaction timed out. Falling back to HTTP.'));
+            }, 3000);
+
+            socket.emit(
+              'toggle_reaction',
+              { conversationId: convId, messageId: targetMsgId, emoji },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack.reactions);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to toggle reaction via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            serverReactions = await socketPromise;
+          } catch {
+            // Fallback to REST API
+            const res = await toggleReactionApi(convId, targetMsgId, emoji);
+            serverReactions = res?.reactions;
+          }
+        } else {
+          // Socket disconnected, send via REST API
+          const res = await toggleReactionApi(convId, targetMsgId, emoji);
+          serverReactions = res?.reactions;
+        }
+
+        // Reconcile with verified server response
+        if (Array.isArray(serverReactions)) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              extractId(m._id || m.id) === targetMsgId
+                ? { ...m, reactions: serverReactions }
+                : m
+            )
+          );
+        }
+      } catch (err) {
+        console.warn('Reaction toggle failed:', err.message);
+        setChatError(err.message || 'Failed to update reaction.');
+        if (snapshotMessages) {
+          setMessages(snapshotMessages);
+        }
+      }
+    },
+    [activeConversation, socket, isConnected, user]
+  );
+
+  // 10. Edit message with optimistic update and server confirmation
+  const editMessage = useCallback(
+    async (messageId, text) => {
+      const currentConv = activeConversation || activeConversationRef.current;
+      if (!currentConv) return { success: false, error: 'No active conversation.' };
+
+      const targetMsgId = extractId(messageId);
+      if (!targetMsgId) return { success: false, error: 'Invalid message ID.' };
+
+      const trimmed = (text || '').trim();
+      if (!trimmed) {
+        return { success: false, error: 'Message cannot be empty.' };
+      }
+      if (trimmed.length > 2000) {
+        return { success: false, error: 'Message cannot exceed 2000 characters.' };
+      }
+
+      // Check for unchanged content
+      const existingMsg = messages.find((m) => extractId(m._id || m.id) === targetMsgId);
+      if (existingMsg && existingMsg.text === trimmed) {
+        return { success: true, unchanged: true, message: existingMsg };
+      }
+
+      const convId = extractId(currentConv._id || currentConv.id);
+      const snapshotMessages = messages;
+      const now = new Date().toISOString();
+
+      // Optimistic update
+      setMessages((prev) =>
+        prev.map((m) =>
+          extractId(m._id || m.id) === targetMsgId
+            ? { ...m, text: trimmed, isEdited: true, editedAt: now }
+            : m
+        )
+      );
+
+      // Optimistically update conversation lastMessage preview if this is the last message
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (extractId(c._id) === convId && c.lastMessage) {
+            const isLast =
+              !c.lastMessage.createdAt ||
+              (existingMsg &&
+                new Date(c.lastMessage.createdAt).getTime() ===
+                  new Date(existingMsg.createdAt).getTime());
+            if (isLast) {
+              return {
+                ...c,
+                lastMessage: {
+                  ...c.lastMessage,
+                  text: trimmed,
+                },
+              };
+            }
+          }
+          return c;
+        })
+      );
+
+      try {
+        let updatedMsg = null;
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket edit timed out. Falling back to HTTP.'));
+            }, 3000);
+
+            socket.emit(
+              'edit_message',
+              { conversationId: convId, messageId: targetMsgId, text: trimmed },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack.message);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to edit message via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            updatedMsg = await socketPromise;
+          } catch {
+            const res = await editMessageApi(convId, targetMsgId, trimmed);
+            updatedMsg = res?.message;
+          }
+        } else {
+          const res = await editMessageApi(convId, targetMsgId, trimmed);
+          updatedMsg = res?.message;
+        }
+
+        if (updatedMsg) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              extractId(m._id || m.id) === targetMsgId ? updatedMsg : m
+            )
+          );
+          return { success: true, message: updatedMsg };
+        }
+        return { success: true };
+      } catch (err) {
+        console.warn('Edit message failed:', err.message);
+        setChatError(err.message || 'Failed to edit message.');
+        setMessages(snapshotMessages);
+        return { success: false, error: err.message };
+      }
+    },
+    [activeConversation, messages, socket]
+  );
+
+  // 11. Delete message with soft-delete optimistic update and server confirmation
+  const deleteMessage = useCallback(
+    async (messageId) => {
+      const currentConv = activeConversation || activeConversationRef.current;
+      if (!currentConv) return { success: false, error: 'No active conversation.' };
+
+      const targetMsgId = extractId(messageId);
+      if (!targetMsgId) return { success: false, error: 'Invalid message ID.' };
+
+      const convId = extractId(currentConv._id || currentConv.id);
+      const snapshotMessages = messages;
+      const existingMsg = messages.find((m) => extractId(m._id || m.id) === targetMsgId);
+      const now = new Date().toISOString();
+
+      // Optimistic soft delete
+      setMessages((prev) =>
+        prev.map((m) =>
+          extractId(m._id || m.id) === targetMsgId
+            ? {
+                ...m,
+                isDeleted: true,
+                deletedAt: now,
+                text: 'This message was deleted',
+                reactions: [],
+              }
+            : m
+        )
+      );
+
+      // Optimistically update conversation lastMessage preview
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (extractId(c._id) === convId && c.lastMessage) {
+            const isLast =
+              !c.lastMessage.createdAt ||
+              (existingMsg &&
+                new Date(c.lastMessage.createdAt).getTime() ===
+                  new Date(existingMsg.createdAt).getTime());
+            if (isLast) {
+              return {
+                ...c,
+                lastMessage: {
+                  ...c.lastMessage,
+                  text: 'This message was deleted',
+                },
+              };
+            }
+          }
+          return c;
+        })
+      );
+
+      try {
+        let deletedMsg = null;
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket delete timed out. Falling back to HTTP.'));
+            }, 3000);
+
+            socket.emit(
+              'delete_message',
+              { conversationId: convId, messageId: targetMsgId },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack.message);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to delete message via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            deletedMsg = await socketPromise;
+          } catch {
+            const res = await deleteMessageApi(convId, targetMsgId);
+            deletedMsg = res?.message;
+          }
+        } else {
+          const res = await deleteMessageApi(convId, targetMsgId);
+          deletedMsg = res?.message;
+        }
+
+        if (deletedMsg) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              extractId(m._id || m.id) === targetMsgId ? deletedMsg : m
+            )
+          );
+        }
+        return { success: true };
+      } catch (err) {
+        console.warn('Delete message failed:', err.message);
+        setChatError(err.message || 'Failed to delete message.');
+        setMessages(snapshotMessages);
+        return { success: false, error: err.message };
+      }
+    },
+    [activeConversation, messages, socket]
+  );
+
+  // 12. Real-time socket event listeners
   useEffect(() => {
     if (!socket || !isAuthenticated) return;
 
@@ -511,6 +899,18 @@ export function ChatProvider({ children }) {
       const currentActive = activeConversationRef.current;
 
       // Update conversations list metadata (lastMessage and unread count)
+      let previewText = message.text;
+      if (!previewText) {
+        const att = message.attachment || (message.attachments && message.attachments[0]);
+        if (att) {
+          if (att.resourceType === 'raw' || (att.mimeType && !att.mimeType.startsWith('image/'))) {
+            previewText = `📄 ${att.originalName || 'Document'}`;
+          } else {
+            previewText = '📷 Image';
+          }
+        }
+      }
+
       setConversations((prev) => {
         const exists = prev.some((c) => c._id === conversationId);
         if (exists) {
@@ -520,7 +920,7 @@ export function ChatProvider({ children }) {
               return {
                 ...c,
                 lastMessage: {
-                  text: message.text,
+                  text: previewText,
                   senderId: message.senderId,
                   senderName: message.senderName,
                   senderRole: message.senderRole,
@@ -554,12 +954,16 @@ export function ChatProvider({ children }) {
         });
 
         // Mark as read immediately if it's someone else's message
-        if (message.senderId !== user?._id) {
+        const currentUserId = extractId(user);
+        const msgSenderId = extractId(message.senderId);
+        if (currentUserId && msgSenderId && msgSenderId !== currentUserId) {
           markAsRead(conversationId);
         }
       } else {
         // Increment global unread count
-        if (message.senderId !== user?._id) {
+        const currentUserId = extractId(user);
+        const msgSenderId = extractId(message.senderId);
+        if (currentUserId && msgSenderId && msgSenderId !== currentUserId) {
           setUnreadChatCount((prev) => prev + 1);
         }
       }
@@ -569,9 +973,9 @@ export function ChatProvider({ children }) {
     const handleTypingStatus = (payload) => {
       if (!payload || !payload.conversationId) return;
       const currentActive = activeConversationRef.current;
-      if (!currentActive || currentActive._id !== payload.conversationId) return;
+      if (!currentActive || extractId(currentActive._id || currentActive.id) !== extractId(payload.conversationId)) return;
 
-      if (payload.userId === user?._id) return; // Don't show typing for self
+      if (extractId(payload.userId) === extractId(user)) return; // Don't show typing for self
 
       setTypingUsers((prev) => {
         const updated = new Map(prev);
@@ -588,13 +992,14 @@ export function ChatProvider({ children }) {
     const handleMessagesRead = (payload) => {
       if (!payload || !payload.conversationId) return;
       const currentActive = activeConversationRef.current;
-      if (!currentActive || currentActive._id !== payload.conversationId) return;
+      if (!currentActive || extractId(currentActive._id || currentActive.id) !== extractId(payload.conversationId)) return;
 
       const { userId, readAt } = payload;
+      const readUserId = extractId(userId);
       setMessages((prev) =>
         prev.map((m) => {
           const alreadyRead = (m.readBy || []).some(
-            (r) => (r.userId?._id || r.userId) === userId
+            (r) => extractId(r.userId) === readUserId
           );
           if (!alreadyRead) {
             return {
@@ -629,9 +1034,106 @@ export function ChatProvider({ children }) {
       refreshConversations();
     };
 
+    // Emoji reaction update broadcast
+    const handleReactionUpdated = (payload) => {
+      if (!payload || !payload.messageId || !payload.conversationId) return;
+      const currentActive = activeConversationRef.current;
+      if (!currentActive || extractId(currentActive._id || currentActive.id) !== extractId(payload.conversationId)) return;
+
+      const targetMsgId = extractId(payload.messageId);
+      setMessages((prev) =>
+        prev.map((m) =>
+          extractId(m._id || m.id) === targetMsgId
+            ? { ...m, reactions: payload.reactions || [] }
+            : m
+        )
+      );
+    };
+
+    // Real-time message edit broadcast
+    const handleMessageEdited = (payload) => {
+      if (!payload || !payload.message || !payload.conversationId) return;
+      const { conversationId, message } = payload;
+      const currentActive = activeConversationRef.current;
+
+      if (currentActive && extractId(currentActive._id || currentActive.id) === extractId(conversationId)) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            extractId(m._id || m.id) === extractId(message._id) ? message : m
+          )
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (extractId(c._id) === extractId(conversationId) && c.lastMessage) {
+            const isLast =
+              !c.lastMessage.createdAt ||
+              new Date(c.lastMessage.createdAt).getTime() ===
+                new Date(message.createdAt).getTime();
+            if (isLast) {
+              return {
+                ...c,
+                lastMessage: {
+                  ...c.lastMessage,
+                  text: message.text,
+                },
+              };
+            }
+          }
+          return c;
+        })
+      );
+    };
+
+    // Real-time message delete broadcast
+    const handleMessageDeleted = (payload) => {
+      if (!payload || !payload.messageId || !payload.conversationId) return;
+      const { conversationId, messageId, message } = payload;
+      const currentActive = activeConversationRef.current;
+      const targetMsgId = extractId(messageId);
+
+      if (currentActive && extractId(currentActive._id || currentActive.id) === extractId(conversationId)) {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (extractId(m._id || m.id) === targetMsgId) {
+              return (
+                message || {
+                  ...m,
+                  isDeleted: true,
+                  text: 'This message was deleted',
+                  reactions: [],
+                  deletedAt: new Date().toISOString(),
+                }
+              );
+            }
+            return m;
+          })
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (extractId(c._id) === extractId(conversationId) && c.lastMessage) {
+            return {
+              ...c,
+              lastMessage: {
+                ...c.lastMessage,
+                text: 'This message was deleted',
+              },
+            };
+          }
+          return c;
+        })
+      );
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('typing_status', handleTypingStatus);
     socket.on('messages_read', handleMessagesRead);
+    socket.on('message_reaction_updated', handleReactionUpdated);
+    socket.on('message_edited', handleMessageEdited);
+    socket.on('message_deleted', handleMessageDeleted);
     socket.on('chat_error', handleChatError);
     socket.on('reconnect', handleReconnect);
 
@@ -639,10 +1141,13 @@ export function ChatProvider({ children }) {
       socket.off('new_message', handleNewMessage);
       socket.off('typing_status', handleTypingStatus);
       socket.off('messages_read', handleMessagesRead);
+      socket.off('message_reaction_updated', handleReactionUpdated);
+      socket.off('message_edited', handleMessageEdited);
+      socket.off('message_deleted', handleMessageDeleted);
       socket.off('chat_error', handleChatError);
       socket.off('reconnect', handleReconnect);
     };
-  }, [socket, isAuthenticated, user?._id, refreshConversations, markAsRead]);
+  }, [socket, isAuthenticated, user, refreshConversations, markAsRead]);
 
   const value = {
     conversations,
@@ -667,7 +1172,14 @@ export function ChatProvider({ children }) {
     sendMessage,
     sendTyping,
     markAsRead,
+    toggleReaction,
+    editMessage,
+    deleteMessage,
+    uploadChatImage: uploadChatImageApi,
+    uploadChatAttachment: uploadChatAttachmentApi,
+    downloadAttachment: downloadAttachmentApi,
     isConnected,
+    otherParticipantId,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

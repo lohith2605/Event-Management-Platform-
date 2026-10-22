@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react
 import { Loader2, AlertCircle, MessageSquare, ArrowUp, ArrowDown } from 'lucide-react';
 import MessageBubble from './MessageBubble';
 import { useAuth } from '../../context/AuthContext';
+import { extractId } from '../../utils/chatUtils';
 
 export default function MessageTimeline({
   messages = [],
@@ -202,7 +203,7 @@ export default function MessageTimeline({
 
           {/* Timeline Messages */}
           {messages.map((msg, index) => {
-            const isOwn = (msg.senderId?._id || msg.senderId)?.toString() === user?._id?.toString();
+            const isOwn = Boolean(extractId(user) && extractId(msg.senderId) === extractId(user));
             const prevMsg = messages[index - 1];
             const showDate = !prevMsg || isDifferentDay(prevMsg.createdAt, msg.createdAt);
 

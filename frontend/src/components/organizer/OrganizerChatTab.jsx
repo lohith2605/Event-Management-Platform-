@@ -25,6 +25,7 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
     chatError,
     isConnected,
     refreshConversations,
+    otherParticipantId,
   } = useChat();
 
   const [selectedEventId, setSelectedEventId] = useState('all');
@@ -33,16 +34,6 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
   const displayedConversations = selectedEventId === 'all'
     ? conversations
     : conversations.filter((c) => (c.eventId?._id || c.eventId) === selectedEventId);
-
-  // Other participant ID for read receipts
-  let otherParticipantId = null;
-  if (activeConversation) {
-    if (activeConversation.type === 'admin_organizer') {
-      otherParticipantId = activeConversation.organizerId?._id || activeConversation.organizerId;
-    } else {
-      otherParticipantId = activeConversation.attendeeId?._id || activeConversation.attendeeId;
-    }
-  }
 
   return (
     <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-none sm:rounded-2xl md:rounded-3xl shadow-xs overflow-hidden flex-1 min-h-0 flex flex-col h-full">
@@ -65,6 +56,7 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
             <button
               type="button"
               onClick={onNavigateBack}
+              aria-label="Back to Dashboard"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer shrink-0"
               title="Back to Dashboard"
             >
@@ -90,6 +82,7 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
               <select
                 value={selectedEventId}
                 onChange={(e) => setSelectedEventId(e.target.value)}
+                aria-label="Filter conversations by event"
                 className="bg-transparent text-[var(--color-main-text)] text-xs font-semibold focus:outline-hidden cursor-pointer"
               >
                 <option value="all">All Events ({events.length})</option>
@@ -165,7 +158,7 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
               />
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2 my-auto">
               <div className="w-16 h-16 rounded-3xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] flex items-center justify-center text-[var(--color-primary-action)] shadow-xs mb-1">
                 <MessageSquare className="w-8 h-8" />
               </div>

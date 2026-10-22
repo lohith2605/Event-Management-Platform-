@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Conversation from '../models/Conversation.js';
-import Message from '../models/Message.js';
+import Message, { ALLOWED_EMOJIS } from '../models/Message.js';
 import Event from '../models/Event.js';
 import {
   verifyConversationAccess,
@@ -11,6 +11,11 @@ import {
   emitToUser,
   emitToRole,
 } from '../services/socketService.js';
+import {
+  uploadChatAttachmentToCloudinary,
+  uploadChatImageToCloudinary,
+  streamAttachmentFromCloudinary,
+} from '../services/cloudinaryService.js';
 
 /**
  * @desc    Get all conversations accessible to the authenticated user
@@ -202,10 +207,23 @@ export const getConversationMessages = async (req, res, next) => {
     const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
 
     // Fetch messages in chronological order (or reverse for pagination)
-    const messages = await Message.find(query)
+    const rawMessages = await Message.find(query)
       .sort({ createdAt: -1 })
       .limit(parsedLimit)
       .lean();
+
+    const messages = rawMessages.map((m) => {
+      if (m.isDeleted) {
+        return {
+          ...m,
+          text: 'This message was deleted',
+          reactions: [],
+          attachments: [],
+          attachment: null,
+        };
+      }
+      return m;
+    });
 
     // Reverse to chronological order (oldest to newest) for client rendering
     messages.reverse();
@@ -228,7 +246,7 @@ export const getConversationMessages = async (req, res, next) => {
 export const sendMessage = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { text } = req.body;
+    const { text, attachment, attachments } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -237,14 +255,35 @@ export const sendMessage = async (req, res, next) => {
       });
     }
 
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message text cannot be empty.',
+    // Validate and sanitize attachments
+    const cleanAttachments = [];
+    if (
+      attachment &&
+      typeof attachment.url === 'string' &&
+      attachment.url.startsWith('https://res.cloudinary.com/')
+    ) {
+      cleanAttachments.push(attachment);
+    } else if (Array.isArray(attachments)) {
+      attachments.forEach((att) => {
+        if (
+          att &&
+          typeof att.url === 'string' &&
+          att.url.startsWith('https://res.cloudinary.com/')
+        ) {
+          cleanAttachments.push(att);
+        }
       });
     }
 
-    const trimmedText = text.trim();
+    const trimmedText = typeof text === 'string' ? text.trim() : '';
+
+    if (!trimmedText && cleanAttachments.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message must contain text content or an attachment.',
+      });
+    }
+
     if (trimmedText.length > 2000) {
       return res.status(400).json({
         success: false,
@@ -276,12 +315,24 @@ export const sendMessage = async (req, res, next) => {
       senderName: req.user.name,
       senderRole: req.user.role,
       text: trimmedText,
+      attachments: cleanAttachments,
+      attachment: cleanAttachments[0] || null,
       readBy: [{ userId: req.user._id, readAt: new Date() }],
     });
 
+    let previewText = message.text;
+    if (!previewText && cleanAttachments.length > 0) {
+      const att = cleanAttachments[0];
+      if (att.resourceType === 'raw' || (att.mimeType && !att.mimeType.startsWith('image/'))) {
+        previewText = `📄 ${att.originalName || 'Document'}`;
+      } else {
+        previewText = '📷 Image';
+      }
+    }
+
     // Update conversation lastMessage metadata
     conversation.lastMessage = {
-      text: message.text,
+      text: previewText,
       senderId: req.user._id,
       senderName: req.user.name,
       senderRole: req.user.role,
@@ -335,14 +386,14 @@ export const sendMessage = async (req, res, next) => {
           conversationId: conversation._id,
           eventId: conversation.eventId,
           senderName: req.user.name,
-          text: message.text,
+          text: previewText,
         });
       } else {
         emitToUser(rId, 'chat_notification', {
           conversationId: conversation._id,
           eventId: conversation.eventId,
           senderName: req.user.name,
-          text: message.text,
+          text: previewText,
         });
       }
     });
@@ -467,3 +518,478 @@ export const getUnreadCount = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @desc    Toggle emoji reaction on a message
+ * @route   POST /api/chat/conversations/:id/messages/:messageId/reactions
+ * @access  Private
+ */
+export const toggleReaction = async (req, res, next) => {
+  try {
+    const { id, messageId } = req.params;
+    const { emoji } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation or message ID format.',
+      });
+    }
+
+    if (!emoji || typeof emoji !== 'string' || !ALLOWED_EMOJIS.includes(emoji)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid emoji. Supported emojis: ${ALLOWED_EMOJIS.join(' ')}`,
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    // Verify message exists in this conversation
+    const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found in this conversation.',
+      });
+    }
+
+    const userId = req.user._id;
+    const userName = req.user.name || 'User';
+
+    // Atomic toggle:
+    // 1. Try pulling the reaction if it already exists for this user and emoji
+    let updatedMessage = await Message.findOneAndUpdate(
+      {
+        _id: messageId,
+        conversationId: conversation._id,
+        $or: [
+          { reactions: { $elemMatch: { emoji, userId } } },
+          { reactions: { $elemMatch: { emoji, user: userId } } },
+        ],
+      },
+      {
+        $pull: {
+          reactions: {
+            emoji,
+            $or: [{ userId }, { user: userId }],
+          },
+        },
+      },
+      { new: true }
+    );
+
+    // 2. If it wasn't pulled, it wasn't present. Add it atomically with concurrency guard
+    if (!updatedMessage) {
+      updatedMessage = await Message.findOneAndUpdate(
+        {
+          _id: messageId,
+          conversationId: conversation._id,
+          reactions: {
+            $not: {
+              $elemMatch: {
+                emoji,
+                $or: [{ userId }, { user: userId }],
+              },
+            },
+          },
+        },
+        {
+          $push: {
+            reactions: {
+              emoji,
+              userId,
+              userName,
+              createdAt: new Date(),
+            },
+          },
+        },
+        { new: true }
+      );
+    }
+
+    // 3. Fallback: if concurrent update happened, fetch current state
+    if (!updatedMessage) {
+      updatedMessage = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+    }
+
+    const reactions = updatedMessage ? updatedMessage.reactions || [] : [];
+
+    // Broadcast reaction update to authorized conversation participants
+    emitToConversation(conversation._id, 'message_reaction_updated', {
+      conversationId: conversation._id,
+      messageId: message._id,
+      reactions,
+    });
+
+    res.status(200).json({
+      success: true,
+      messageId: message._id,
+      reactions,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Edit a message within an authorized conversation
+ * @route   PUT /api/chat/conversations/:id/messages/:messageId
+ * @access  Private
+ */
+export const editMessage = async (req, res, next) => {
+  try {
+    const { id, messageId } = req.params;
+    const { text } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation or message ID format.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    // Verify message exists in this conversation
+    const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found in this conversation.',
+      });
+    }
+
+    // Check author ownership (never trust client sender ID)
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You can only edit your own messages.',
+      });
+    }
+
+    // Cannot edit deleted messages
+    if (message.isDeleted) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot edit a message that has been deleted.',
+      });
+    }
+
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    const hasAttachments =
+      (Array.isArray(message.attachments) && message.attachments.length > 0) ||
+      Boolean(message.attachment && message.attachment.url);
+
+    // If message has no attachments, empty text is rejected
+    if (!trimmed && !hasAttachments) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message text cannot be empty.',
+      });
+    }
+
+    if (trimmed.length > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message cannot exceed 2000 characters.',
+      });
+    }
+
+    // Prevent unnecessary updates when the content has not changed
+    if (message.text === trimmed) {
+      return res.status(200).json({
+        success: true,
+        message,
+        unchanged: true,
+      });
+    }
+
+    message.text = trimmed;
+    message.isEdited = true;
+    message.editedAt = new Date();
+    await message.save();
+
+    // If this was the last message of the conversation, update conversation preview
+    if (
+      conversation.lastMessage &&
+      conversation.lastMessage.createdAt &&
+      new Date(conversation.lastMessage.createdAt).getTime() === new Date(message.createdAt).getTime()
+    ) {
+      conversation.lastMessage.text = trimmed || (hasAttachments ? '📷 Image' : '');
+      await conversation.save();
+    }
+
+    // Broadcast to authorized participants in room
+    emitToConversation(conversation._id, 'message_edited', {
+      conversationId: conversation._id,
+      message,
+    });
+
+    res.status(200).json({
+      success: true,
+      message,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Soft-delete a message within an authorized conversation
+ * @route   DELETE /api/chat/conversations/:id/messages/:messageId
+ * @access  Private
+ */
+export const deleteMessage = async (req, res, next) => {
+  try {
+    const { id, messageId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation or message ID format.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    // Verify message exists in this conversation
+    const message = await Message.findOne({ _id: messageId, conversationId: conversation._id });
+    if (!message) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found in this conversation.',
+      });
+    }
+
+    // Check author ownership (never trust client sender ID)
+    if (message.senderId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden: You can only delete your own messages.',
+      });
+    }
+
+    if (message.isDeleted) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message is already deleted.',
+      });
+    }
+
+    // Soft delete: clear original text, reactions, attachments, mark isDeleted
+    message.isDeleted = true;
+    message.deletedAt = new Date();
+    message.text = 'This message was deleted';
+    message.reactions = [];
+    message.attachments = [];
+    message.attachment = null;
+    await message.save();
+
+    // If this was the last message, update conversation preview
+    if (
+      conversation.lastMessage &&
+      conversation.lastMessage.createdAt &&
+      new Date(conversation.lastMessage.createdAt).getTime() === new Date(message.createdAt).getTime()
+    ) {
+      conversation.lastMessage.text = 'This message was deleted';
+      await conversation.save();
+    }
+
+    // Broadcast message_deleted to conversation room
+    emitToConversation(conversation._id, 'message_deleted', {
+      conversationId: conversation._id,
+      messageId: message._id,
+      message,
+    });
+
+    res.status(200).json({
+      success: true,
+      messageId: message._id,
+      message,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Upload an attachment (image or document) for a conversation
+ * @route   POST /api/chat/conversations/:id/upload
+ * @access  Private
+ */
+export const uploadChatAttachment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation ID format.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    const file = req.file || (req.files && (req.files.file?.[0] || req.files.image?.[0]));
+    if (!file || !file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded.',
+      });
+    }
+
+    const attachment = await uploadChatAttachmentToCloudinary(
+      file.buffer,
+      file.originalname,
+      file.mimetype
+    );
+
+    res.status(200).json({
+      success: true,
+      attachment,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const uploadChatImage = uploadChatAttachment;
+
+/**
+ * @desc    Download or stream a verified chat attachment securely
+ * @route   GET /api/chat/conversations/:id/messages/:messageId/download
+ * @access  Private
+ */
+export const downloadAttachment = async (req, res, next) => {
+  try {
+    const { id, messageId } = req.params;
+    const { action } = req.query; // 'download' or 'open'
+
+    if (!mongoose.Types.ObjectId.isValid(id) || !mongoose.Types.ObjectId.isValid(messageId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation or message ID format.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Verify participant authorization
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    const message = await Message.findById(messageId);
+    if (!message || message.conversationId.toString() !== conversation._id.toString()) {
+      return res.status(404).json({
+        success: false,
+        message: 'Message not found in this conversation.',
+      });
+    }
+
+    if (message.isDeleted) {
+      return res.status(410).json({
+        success: false,
+        message: 'Attachment is no longer available because this message was deleted.',
+      });
+    }
+
+    const attachment =
+      message.attachment ||
+      (Array.isArray(message.attachments) && message.attachments.length > 0
+        ? message.attachments[0]
+        : null);
+
+    if (!attachment || !attachment.url) {
+      return res.status(404).json({
+        success: false,
+        message: 'No attachment found for this message.',
+      });
+    }
+
+    // Stream file from Cloudinary with safe download headers
+    const isInline = action === 'open' && attachment.mimeType === 'application/pdf';
+
+    await streamAttachmentFromCloudinary(attachment.url, res, {
+      filename: attachment.originalName || 'attachment',
+      mimeType: attachment.mimeType || 'application/octet-stream',
+      isInline,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+

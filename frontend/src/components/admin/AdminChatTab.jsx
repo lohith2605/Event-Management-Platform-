@@ -25,18 +25,14 @@ export default function AdminChatTab() {
     chatError,
     isConnected,
     refreshConversations,
+    otherParticipantId,
   } = useChat();
 
   // Admin view strictly displays admin_organizer conversations
   const adminConversations = conversations.filter((c) => c.type === 'admin_organizer');
 
-  let otherParticipantId = null;
-  if (activeConversation) {
-    otherParticipantId = activeConversation.organizerId?._id || activeConversation.organizerId;
-  }
-
   return (
-    <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl shadow-xs overflow-hidden h-[750px] max-h-[82vh] flex flex-col">
+    <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-none sm:rounded-2xl md:rounded-3xl shadow-xs overflow-hidden h-[750px] max-h-[82vh] flex flex-col">
       {/* Top Header */}
       <div className="p-4 border-b border-[var(--color-borders)] flex items-center justify-between gap-3 bg-[var(--color-primary-bg)]/30">
         <div>
@@ -57,6 +53,7 @@ export default function AdminChatTab() {
         <button
           type="button"
           onClick={refreshConversations}
+          aria-label="Refresh conversations"
           className="p-1.5 rounded-xl border border-[var(--color-borders)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
           title="Refresh conversations"
         >
@@ -115,7 +112,7 @@ export default function AdminChatTab() {
               />
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2 my-auto">
               <div className="w-16 h-16 rounded-3xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] flex items-center justify-center text-[var(--color-primary-action)] shadow-xs mb-1">
                 <MessageSquare className="w-8 h-8" />
               </div>

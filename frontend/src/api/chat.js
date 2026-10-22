@@ -52,15 +52,68 @@ export const fetchMessagesApi = async (conversationId, { limit = 50, before } = 
   return handleResponse(response);
 };
 
-export const sendMessageApi = async (conversationId, text) => {
+export const sendMessageApi = async (conversationId, payload) => {
+  const body = typeof payload === 'string' ? { text: payload } : payload;
   const response = await fetch(`/api/chat/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   return handleResponse(response);
 };
+
+export const uploadChatAttachmentApi = async (conversationId, file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`/api/chat/conversations/${conversationId}/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+  return handleResponse(response);
+};
+
+// Backward-compatible alias
+export const uploadChatImageApi = uploadChatAttachmentApi;
+
+export const downloadAttachmentApi = async (
+  conversationId,
+  messageId,
+  filename = 'download',
+  action = 'download'
+) => {
+  const url = `/api/chat/conversations/${conversationId}/messages/${messageId}/download${
+    action === 'open' ? '?action=open' : ''
+  }`;
+
+  if (action === 'open') {
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || 'Failed to download attachment.');
+  }
+
+  const blob = await response.blob();
+  const blobUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename || 'download';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(blobUrl);
+};
+
 
 export const markConversationReadApi = async (conversationId) => {
   const response = await fetch(`/api/chat/conversations/${conversationId}/read`, {
@@ -79,3 +132,43 @@ export const fetchUnreadChatCountApi = async () => {
   });
   return handleResponse(response);
 };
+
+export const toggleReactionApi = async (conversationId, messageId, emoji) => {
+  const response = await fetch(
+    `/api/chat/conversations/${conversationId}/messages/${messageId}/reactions`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ emoji }),
+    }
+  );
+  return handleResponse(response);
+};
+
+export const editMessageApi = async (conversationId, messageId, text) => {
+  const response = await fetch(
+    `/api/chat/conversations/${conversationId}/messages/${messageId}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ text }),
+    }
+  );
+  return handleResponse(response);
+};
+
+export const deleteMessageApi = async (conversationId, messageId) => {
+  const response = await fetch(
+    `/api/chat/conversations/${conversationId}/messages/${messageId}`,
+    {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+  return handleResponse(response);
+};
+
+

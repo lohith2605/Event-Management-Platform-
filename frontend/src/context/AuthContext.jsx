@@ -15,6 +15,16 @@ import { auth, isFirebaseConfigured } from '../config/firebase';
 
 const AuthContext = createContext(null);
 
+const normalizeUser = (u) => {
+  if (!u) return null;
+  const id = (u.id || u._id)?.toString();
+  return {
+    ...u,
+    _id: id,
+    id: id,
+  };
+};
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -34,7 +44,7 @@ export function AuthProvider({ children }) {
     try {
       const data = await getMeApi();
       if (data && data.user) {
-        setUser(data.user);
+        setUser(normalizeUser(data.user));
         if (data.session) {
           setSession(data.session);
         }
@@ -143,11 +153,12 @@ export function AuthProvider({ children }) {
     }
     if (data && data.user) {
       setPending2FA(null);
-      setUser(data.user);
+      const normalized = normalizeUser(data.user);
+      setUser(normalized);
       if (data.session) {
         setSession(data.session);
       }
-      return data.user;
+      return normalized;
     }
     return data;
   };
@@ -228,11 +239,12 @@ export function AuthProvider({ children }) {
     }
     if (data && data.user) {
       setPending2FA(null);
-      setUser(data.user);
+      const normalized = normalizeUser(data.user);
+      setUser(normalized);
       if (data.session) {
         setSession(data.session);
       }
-      return data.user;
+      return normalized;
     }
     return data;
   };
@@ -253,12 +265,13 @@ export function AuthProvider({ children }) {
     });
 
     if (data && data.user) {
-      setUser(data.user);
+      const normalized = normalizeUser(data.user);
+      setUser(normalized);
       if (data.session) {
         setSession(data.session);
       }
       setPending2FA(null);
-      return data.user;
+      return normalized;
     }
     return data;
   };
@@ -282,12 +295,13 @@ export function AuthProvider({ children }) {
   const register = async (userData) => {
     const data = await registerApi(userData);
     if (data && data.user) {
-      setUser(data.user);
+      const normalized = normalizeUser(data.user);
+      setUser(normalized);
       if (data.session) {
         setSession(data.session);
       }
+      return normalized;
     }
-    return data.user;
   };
 
   // Logout handler

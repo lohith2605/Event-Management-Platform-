@@ -85,6 +85,7 @@ export default function AttendeeDashboard() {
     chatError,
     isConnected,
     startOrOpenConversation,
+    otherParticipantId,
   } = useChat();
 
   // Map route URL path to active dashboard tab
@@ -2471,7 +2472,7 @@ export default function AttendeeDashboard() {
                         typingUsers={typingUsers}
                         error={chatError}
                         onRetry={() => openConversation(activeConversation._id)}
-                        otherParticipantId={activeConversation.organizerId?._id || activeConversation.organizerId}
+                        otherParticipantId={otherParticipantId}
                       />
                       <MessageComposer
                         onSendMessage={sendMessage}
