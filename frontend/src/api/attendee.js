@@ -1,7 +1,4 @@
-/**
- * UTSAV — Attendee Dashboard & Supporting Services API Client
- * Uses HTTP-only cookie sessions with relative endpoints proxied by Vite
- */
+
 
 const handleResponse = async (response) => {
   const data = await response.json().catch(() => ({}));
