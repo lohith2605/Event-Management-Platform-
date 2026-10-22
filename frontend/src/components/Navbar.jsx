@@ -120,6 +120,16 @@ export default function Navbar() {
     return '/';
   };
 
+  const handleBrandLogoClick = (e) => {
+    closeMenu();
+    if (isAuthenticated && role === 'organizer') {
+      if (location.pathname === '/organizer/dashboard' && location.search) {
+        e.preventDefault();
+        navigate('/organizer/dashboard');
+      }
+    }
+  };
+
   const getExploreEventsDestination = () => {
     if (isAuthenticated && role === 'attendee') {
       return '/attendee';
@@ -231,7 +241,7 @@ export default function Navbar() {
           <div className="flex items-center gap-2.5 sm:gap-4 shrink-0">
             <Link
               to={getBrandLogoDestination()}
-              onClick={closeMenu}
+              onClick={handleBrandLogoClick}
               className="flex items-center gap-2.5 sm:gap-3 group text-[var(--color-main-text)] focus-visible:outline-none shrink-0"
               aria-label={`${BRAND.name} — ${BRAND.tagline}`}
             >

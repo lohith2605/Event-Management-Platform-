@@ -19,6 +19,7 @@ export default function AdminChatTab() {
     hasMoreMessages,
     loadOlderMessages,
     sendMessage,
+    sendingMessage,
     sendTyping,
     typingUsers,
     chatError,
@@ -110,6 +111,7 @@ export default function AdminChatTab() {
                 onSendMessage={sendMessage}
                 onTyping={sendTyping}
                 disabled={loadingMessages}
+                sending={sendingMessage}
               />
             </>
           ) : (

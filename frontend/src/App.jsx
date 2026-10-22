@@ -11,6 +11,7 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import AttendeeDashboard from './pages/AttendeeDashboard';
 import OrganizerDashboard from './pages/OrganizerDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import MessagesPage from './pages/MessagesPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
@@ -241,6 +242,17 @@ export default function App() {
                   <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
                     <DashboardLayout>
                       <AttendeeDashboard />
+                    </DashboardLayout>
+                  </ProtectedRoute>
+                }
+              />
+              {/* Dedicated Full-Page Messaging Route */}
+              <Route
+                path="/messages"
+                element={
+                  <ProtectedRoute allowedRoles={['attendee', 'organizer', 'admin']}>
+                    <DashboardLayout>
+                      <MessagesPage />
                     </DashboardLayout>
                   </ProtectedRoute>
                 }

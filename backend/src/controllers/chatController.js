@@ -9,6 +9,7 @@ import {
 import {
   emitToConversation,
   emitToUser,
+  emitToRole,
 } from '../services/socketService.js';
 
 /**
@@ -329,7 +330,14 @@ export const sendMessage = async (req, res, next) => {
 
     // Notify individual recipient private rooms
     recipientIds.forEach((rId) => {
-      if (rId !== 'admin') {
+      if (rId === 'admin') {
+        emitToRole('admin', 'chat_notification', {
+          conversationId: conversation._id,
+          eventId: conversation.eventId,
+          senderName: req.user.name,
+          text: message.text,
+        });
+      } else {
         emitToUser(rId, 'chat_notification', {
           conversationId: conversation._id,
           eventId: conversation.eventId,

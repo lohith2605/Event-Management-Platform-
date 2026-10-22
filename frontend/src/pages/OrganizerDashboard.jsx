@@ -75,6 +75,13 @@ export default function OrganizerDashboard() {
   );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Synchronize activeTab whenever searchParams changes (e.g. brand logo click, browser back/forward)
+  useEffect(() => {
+    const currentTab = searchParams.get('tab') || 'overview';
+    const validTab = NAV_ITEMS.some((i) => i.id === currentTab) ? currentTab : 'overview';
+    setActiveTab(validTab);
+  }, [searchParams]);
+
   // Overview data
   const [overviewData, setOverviewData] = useState(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -307,7 +314,13 @@ export default function OrganizerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--color-primary-bg)] text-[var(--color-main-text)] transition-colors">
+    <div
+      className={`bg-[var(--color-primary-bg)] text-[var(--color-main-text)] transition-colors ${
+        activeTab === 'messages'
+          ? 'h-[calc(100vh-5rem)] max-h-[calc(100vh-5rem)] overflow-hidden flex flex-col'
+          : 'min-h-screen'
+      }`}
+    >
       {/* Top Mobile Bar */}
       <div className="lg:hidden sticky top-0 z-30 bg-[var(--color-primary-bg)]/95 backdrop-blur-md border-b border-[var(--color-borders)] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -339,11 +352,21 @@ export default function OrganizerDashboard() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto flex">
-        {/* Persistent Desktop Sidebar / Collapsible Mobile Drawer */}
+      <div
+        className={`w-full max-w-7xl mx-auto flex ${
+          activeTab === 'messages' ? 'flex-1 min-h-0 overflow-hidden' : ''
+        }`}
+      >
+        {/* Persistent Desktop Sidebar (Hidden when chat/messages is opened) / Collapsible Drawer */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-64 bg-[var(--color-primary-bg)] lg:bg-[var(--color-card-bg)] border-r border-[var(--color-borders)] flex flex-col justify-between p-5 transition-transform duration-200 lg:static lg:translate-x-0 ${
-            mobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
+          className={`fixed inset-y-0 left-0 z-40 w-64 bg-[var(--color-primary-bg)] lg:bg-[var(--color-card-bg)] border-r border-[var(--color-borders)] flex flex-col justify-between p-5 transition-transform duration-200 ${
+            activeTab === 'messages'
+              ? mobileMenuOpen
+                ? 'translate-x-0 shadow-2xl'
+                : '-translate-x-full'
+              : mobileMenuOpen
+              ? 'translate-x-0 shadow-2xl'
+              : '-translate-x-full lg:static lg:translate-x-0'
           }`}
         >
           <div className="space-y-6">
@@ -437,46 +460,56 @@ export default function OrganizerDashboard() {
         {mobileMenuOpen && (
           <div
             onClick={() => setMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/50 z-30 lg:hidden backdrop-blur-2xs"
+            className={`fixed inset-0 bg-black/50 z-30 backdrop-blur-2xs ${
+              activeTab === 'messages' ? '' : 'lg:hidden'
+            }`}
           />
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 min-w-0 py-8 px-4 sm:px-6 lg:px-8">
-          {/* Section Title Header */}
-          <div className="flex items-center justify-between pb-6 mb-6 border-b border-[var(--color-borders)]">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black font-serif text-[var(--color-main-text)]">
-                  {NAV_ITEMS.find((i) => i.id === activeTab)?.label || 'Organizer Dashboard'}
-                </h1>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[var(--color-golden-accent)]/15 text-[var(--color-golden-accent)] border border-[var(--color-golden-accent)]/30">
-                  Certified Host
-                </span>
+        <main
+          className={`flex-1 min-w-0 ${
+            activeTab === 'messages'
+              ? 'p-0 sm:p-2 md:p-4 flex flex-col min-h-0 overflow-hidden'
+              : 'py-8 px-4 sm:px-6 lg:px-8'
+          }`}
+        >
+          {/* Section Title Header (Hidden when chat is opened to eliminate page scrolling) */}
+          {activeTab !== 'messages' && (
+            <div className="flex items-center justify-between pb-6 mb-6 border-b border-[var(--color-borders)]">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-xl sm:text-2xl font-black font-serif text-[var(--color-main-text)]">
+                    {NAV_ITEMS.find((i) => i.id === activeTab)?.label || 'Organizer Dashboard'}
+                  </h1>
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider bg-[var(--color-golden-accent)]/15 text-[var(--color-golden-accent)] border border-[var(--color-golden-accent)]/30">
+                    Certified Host
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--color-secondary-text)] mt-1">
+                  Manage your events, attendee passes, registrations, and genuine ticket analytics.
+                </p>
               </div>
-              <p className="text-xs text-[var(--color-secondary-text)] mt-1">
-                Manage your events, attendee passes, registrations, and genuine ticket analytics.
-              </p>
-            </div>
 
-            <div className="hidden sm:flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeTab === 'overview') loadOverview();
-                  if (activeTab === 'my-events') loadEvents();
-                  if (activeTab === 'attendees') loadAttendees();
-                  if (activeTab === 'bookings') loadBookings();
-                  if (activeTab === 'analytics') loadAnalytics();
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer"
-                title="Refresh Data"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Refresh Data</span>
-              </button>
+              <div className="hidden sm:flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === 'overview') loadOverview();
+                    if (activeTab === 'my-events') loadEvents();
+                    if (activeTab === 'attendees') loadAttendees();
+                    if (activeTab === 'bookings') loadBookings();
+                    if (activeTab === 'analytics') loadAnalytics();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer"
+                  title="Refresh Data"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Refresh Data</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Active Tab View */}
           <AnimatePresence mode="wait">
@@ -486,6 +519,7 @@ export default function OrganizerDashboard() {
               animate={{ opacity: 1, y: 0 }}
               exit={shouldReduceMotion ? false : { opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
+              className={activeTab === 'messages' ? 'flex-1 min-h-0 flex flex-col overflow-hidden h-full' : ''}
             >
               {activeTab === 'overview' && (
                 <OverviewTab
@@ -524,7 +558,11 @@ export default function OrganizerDashboard() {
               )}
 
               {activeTab === 'messages' && (
-                <OrganizerChatTab events={events} />
+                <OrganizerChatTab
+                  events={events}
+                  onNavigateBack={() => handleTabChange('overview')}
+                  onToggleMenu={() => setMobileMenuOpen(true)}
+                />
               )}
 
               {activeTab === 'attendees' && (

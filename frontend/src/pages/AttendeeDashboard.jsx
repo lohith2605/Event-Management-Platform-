@@ -79,6 +79,7 @@ export default function AttendeeDashboard() {
     hasMoreMessages,
     loadOlderMessages,
     sendMessage,
+    sendingMessage,
     sendTyping,
     typingUsers,
     chatError,
@@ -796,8 +797,20 @@ export default function AttendeeDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--color-primary-bg)] text-[var(--color-main-text)] py-6 sm:py-8 px-4 sm:px-6 lg:px-8 transition-colors">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div
+      className={`bg-[var(--color-primary-bg)] text-[var(--color-main-text)] transition-colors ${
+        activeTab === 'messages'
+          ? 'h-[calc(100vh-5rem)] max-h-[calc(100vh-5rem)] overflow-hidden flex flex-col p-0 sm:p-2 md:p-4'
+          : 'min-h-screen py-6 sm:py-8 px-4 sm:px-6 lg:px-8'
+      }`}
+    >
+      <div
+        className={`max-w-7xl mx-auto w-full ${
+          activeTab === 'messages'
+            ? 'flex-1 min-h-0 flex flex-col overflow-hidden space-y-2'
+            : 'space-y-8'
+        }`}
+      >
         {/* ================= CANONICAL DISCOVERY HOMEPAGE (/attendee & /attendee/events) ================= */}
         {activeTab === 'discovery' && (
           <motion.div
@@ -2397,33 +2410,33 @@ export default function AttendeeDashboard() {
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
+            className="flex-1 min-h-0 flex flex-col space-y-2 overflow-hidden h-full"
           >
-            <div className="flex items-center justify-between pb-1">
+            <div className="flex items-center justify-between pb-1 shrink-0 px-3 sm:px-0">
               <div>
                 <button
                   type="button"
                   onClick={() => navigate('/attendee')}
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer mb-1"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--color-primary-action)] hover:underline cursor-pointer mb-0.5"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                   <span>Back to Discover Events</span>
                 </button>
-                <h2 className="text-2xl font-extrabold font-serif text-[var(--color-main-text)]">
+                <h2 className="text-lg sm:text-xl font-extrabold font-serif text-[var(--color-main-text)] leading-tight">
                   Event Messages & Inquiries
                 </h2>
-                <p className="text-xs text-[var(--color-secondary-text)]">
+                <p className="text-[11px] text-[var(--color-secondary-text)]">
                   Direct real-time conversations with organizers of your booked events
                 </p>
               </div>
             </div>
 
             {/* Split-Pane Chat Interface */}
-            <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl shadow-xs overflow-hidden h-[750px] max-h-[80vh] flex flex-col">
+            <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-none sm:rounded-2xl md:rounded-3xl shadow-xs overflow-hidden flex-1 min-h-0 flex flex-col">
               <div className="flex-1 min-h-0 flex overflow-hidden">
                 {/* Left: Conversation list */}
                 <div
-                  className={`w-full md:w-80 lg:w-96 border-r border-[var(--color-borders)] flex flex-col shrink-0 ${
+                  className={`w-full md:w-80 lg:w-96 border-r border-[var(--color-borders)] flex flex-col shrink-0 min-h-0 ${
                     activeConversation ? 'hidden md:flex' : 'flex'
                   }`}
                 >
@@ -2437,7 +2450,7 @@ export default function AttendeeDashboard() {
 
                 {/* Right: Active Chat */}
                 <div
-                  className={`flex-1 flex flex-col bg-[var(--color-primary-bg)]/20 ${
+                  className={`flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--color-primary-bg)]/20 ${
                     !activeConversation ? 'hidden md:flex' : 'flex'
                   }`}
                 >
@@ -2464,10 +2477,11 @@ export default function AttendeeDashboard() {
                         onSendMessage={sendMessage}
                         onTyping={sendTyping}
                         disabled={loadingMessages}
+                        sending={sendingMessage}
                       />
                     </>
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2">
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-[var(--color-secondary-text)] space-y-2 my-auto">
                       <div className="w-16 h-16 rounded-3xl bg-[var(--color-card-bg)] border border-[var(--color-borders)] flex items-center justify-center text-[var(--color-primary-action)] shadow-xs mb-1">
                         <MessageSquare className="w-8 h-8" />
                       </div>

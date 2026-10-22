@@ -8,8 +8,10 @@ export default function MessageComposer({
   sending = false,
 }) {
   const [text, setText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef(null);
   const typingTimerRef = useRef(null);
+  const isSubmittingRef = useRef(false);
 
   // Auto-resize textarea height as text grows up to 140px
   useEffect(() => {
@@ -21,6 +23,15 @@ export default function MessageComposer({
       )}px`;
     }
   }, [text]);
+
+  // Clean up typing timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+      }
+    };
+  }, []);
 
   const handleChange = (e) => {
     const val = e.target.value;
@@ -36,29 +47,44 @@ export default function MessageComposer({
     }
   };
 
+  const isSending = Boolean(sending || isSubmitting);
+
+  const handleSubmit = async () => {
+    const trimmed = text.trim();
+    if (!trimmed || isSending || disabled || isSubmittingRef.current) return;
+
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
+
+    if (onTyping) {
+      onTyping(false);
+    }
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+
+    try {
+      const res = await onSendMessage(trimmed);
+      if (res && res.success) {
+        setText('');
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
+      }
+      // If sending failed, text remains preserved in state for retry!
+    } catch {
+      // Draft preserved on error
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
-  };
-
-  const handleSubmit = async () => {
-    const trimmed = text.trim();
-    if (!trimmed || sending || disabled) return;
-
-    if (onTyping) {
-      onTyping(false);
-    }
-
-    const res = await onSendMessage(trimmed);
-    if (res && res.success) {
-      setText('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
-    }
-    // If sending failed, text remains preserved in state for retry!
   };
 
   const charCount = text.length;
@@ -76,10 +102,11 @@ export default function MessageComposer({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             onBlur={() => onTyping && onTyping(false)}
-            placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
-            disabled={disabled || sending}
+            placeholder={isSending ? "Sending message..." : "Type a message... (Enter to send, Shift+Enter for new line)"}
+            aria-label="Type a message"
+            disabled={disabled || isSending}
             maxLength={2000}
-            className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-transparent text-[var(--color-main-text)] placeholder-[var(--color-secondary-text)] resize-none focus:outline-hidden leading-relaxed max-h-[140px]"
+            className="w-full px-3.5 py-2.5 text-xs sm:text-sm bg-transparent text-[var(--color-main-text)] placeholder-[var(--color-secondary-text)] resize-none focus:outline-hidden leading-relaxed min-h-[40px] max-h-[140px]"
           />
 
           {/* Character Counter */}
@@ -102,12 +129,12 @@ export default function MessageComposer({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={!text.trim() || sending || disabled || isOverLimit}
-          className="p-3 rounded-2xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action)]/90 text-white font-bold transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 flex items-center justify-center"
-          title="Send message"
-          aria-label="Send message"
+          disabled={!text.trim() || isSending || disabled || isOverLimit}
+          className="min-w-[44px] min-h-[44px] p-2.5 sm:p-3 rounded-2xl bg-[var(--color-primary-action)] hover:bg-[var(--color-primary-action-hover)] text-white font-bold transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0 flex items-center justify-center focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--color-primary-action)] focus-visible:ring-offset-2"
+          title={isSending ? "Sending..." : "Send message"}
+          aria-label={isSending ? "Sending message..." : "Send message"}
         >
-          {sending ? (
+          {isSending ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Send className="w-4 h-4" />

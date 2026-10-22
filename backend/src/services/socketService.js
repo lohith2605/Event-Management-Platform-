@@ -289,7 +289,14 @@ export const initSocket = (httpServer) => {
 
         // Notify individual recipient private rooms
         recipientIds.forEach((rId) => {
-          if (rId !== 'admin') {
+          if (rId === 'admin') {
+            emitToRole('admin', 'chat_notification', {
+              conversationId: conversation._id,
+              eventId: conversation.eventId,
+              senderName: socket.user.name,
+              text: message.text,
+            });
+          } else {
             emitToUser(rId, 'chat_notification', {
               conversationId: conversation._id,
               eventId: conversation.eventId,

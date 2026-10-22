@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { MessageSquare, ShieldCheck, Users, Search, RefreshCw, Calendar } from 'lucide-react';
+import { MessageSquare, ShieldCheck, Users, Search, RefreshCw, Calendar, LayoutDashboard, Menu } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import ConversationList from '../chat/ConversationList';
 import ConversationHeader from '../chat/ConversationHeader';
 import MessageTimeline from '../chat/MessageTimeline';
 import MessageComposer from '../chat/MessageComposer';
 
-export default function OrganizerChatTab({ events = [] }) {
+export default function OrganizerChatTab({ events = [], onNavigateBack, onToggleMenu }) {
   const {
     conversations,
     loadingConversations,
@@ -19,6 +19,7 @@ export default function OrganizerChatTab({ events = [] }) {
     hasMoreMessages,
     loadOlderMessages,
     sendMessage,
+    sendingMessage,
     sendTyping,
     typingUsers,
     chatError,
@@ -44,19 +45,45 @@ export default function OrganizerChatTab({ events = [] }) {
   }
 
   return (
-    <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-3xl shadow-xs overflow-hidden h-[750px] max-h-[82vh] flex flex-col">
-      {/* Top Bar for Organizer Events Filter & Stats */}
-      <div className="p-4 border-b border-[var(--color-borders)] flex flex-wrap items-center justify-between gap-3 bg-[var(--color-primary-bg)]/30">
-        <div>
-          <h2 className="text-base font-extrabold text-[var(--color-main-text)] font-serif">
-            Event Messages & Inquiries
-          </h2>
-          <p className="text-xs text-[var(--color-secondary-text)]">
-            Communicate privately with attendees and platform administrators for your events.
-          </p>
+    <div className="bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-none sm:rounded-2xl md:rounded-3xl shadow-xs overflow-hidden flex-1 min-h-0 flex flex-col h-full">
+      {/* Top Bar for Organizer Events Filter, Navigation & Stats */}
+      <div className="p-3.5 sm:p-4 border-b border-[var(--color-borders)] flex flex-wrap items-center justify-between gap-3 bg-[var(--color-primary-bg)]/30 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {onToggleMenu && (
+            <button
+              type="button"
+              onClick={onToggleMenu}
+              className="p-2 rounded-xl border border-[var(--color-borders)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer shrink-0"
+              title="Open Navigation Menu"
+              aria-label="Open Navigation Menu"
+            >
+              <Menu className="w-4 h-4" />
+            </button>
+          )}
+
+          {onNavigateBack && (
+            <button
+              type="button"
+              onClick={onNavigateBack}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)] transition-colors cursor-pointer shrink-0"
+              title="Back to Dashboard"
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 text-[var(--color-primary-action)]" />
+              <span className="hidden sm:inline">Dashboard</span>
+            </button>
+          )}
+
+          <div className="min-w-0">
+            <h2 className="text-sm sm:text-base font-extrabold text-[var(--color-main-text)] font-serif truncate leading-tight">
+              Event Messages & Inquiries
+            </h2>
+            <p className="text-[11px] text-[var(--color-secondary-text)] truncate hidden sm:block">
+              Communicate privately with attendees and platform administrators for your events.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {events.length > 0 && (
             <div className="flex items-center gap-1.5 bg-[var(--color-card-bg)] border border-[var(--color-borders)] rounded-xl px-2.5 py-1 text-xs">
               <Calendar className="w-3.5 h-3.5 text-[var(--color-secondary-text)]" />
@@ -80,6 +107,7 @@ export default function OrganizerChatTab({ events = [] }) {
             onClick={refreshConversations}
             className="p-1.5 rounded-xl border border-[var(--color-borders)] text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
             title="Refresh conversations"
+            aria-label="Refresh conversations"
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -90,7 +118,7 @@ export default function OrganizerChatTab({ events = [] }) {
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Left Pane: Conversation List */}
         <div
-          className={`w-full md:w-80 lg:w-96 border-r border-[var(--color-borders)] flex flex-col shrink-0 ${
+          className={`w-full md:w-80 lg:w-96 border-r border-[var(--color-borders)] flex flex-col shrink-0 min-h-0 ${
             activeConversation ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -104,7 +132,7 @@ export default function OrganizerChatTab({ events = [] }) {
 
         {/* Right Pane: Active Conversation or Placeholder */}
         <div
-          className={`flex-1 flex flex-col bg-[var(--color-primary-bg)]/20 ${
+          className={`flex-1 flex flex-col min-w-0 min-h-0 bg-[var(--color-primary-bg)]/20 ${
             !activeConversation ? 'hidden md:flex' : 'flex'
           }`}
         >
@@ -133,6 +161,7 @@ export default function OrganizerChatTab({ events = [] }) {
                 onSendMessage={sendMessage}
                 onTyping={sendTyping}
                 disabled={loadingMessages}
+                sending={sendingMessage}
               />
             </>
           ) : (

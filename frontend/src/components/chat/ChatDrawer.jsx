@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquare, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { MessageSquare, X, Maximize2 } from 'lucide-react';
 import { useChat } from '../../context/ChatContext';
 import ConversationHeader from './ConversationHeader';
 import MessageTimeline from './MessageTimeline';
@@ -22,11 +23,25 @@ export default function ChatDrawer() {
     hasMoreMessages,
     loadOlderMessages,
     sendMessage,
+    sendingMessage,
     sendTyping,
     typingUsers,
     chatError,
     isConnected,
   } = useChat();
+
+  const navigate = useNavigate();
+
+  // Transition from slide-over drawer to dedicated full-page messages view
+  const handleExpandChat = () => {
+    const convId = activeConversation?._id ? activeConversation._id.toString() : null;
+    setIsChatDrawerOpen(false);
+    if (convId) {
+      navigate(`/messages?c=${encodeURIComponent(convId)}`);
+    } else {
+      navigate('/messages');
+    }
+  };
 
   // Close on Escape key
   useEffect(() => {
@@ -82,6 +97,7 @@ export default function ChatDrawer() {
               showBackButton={true}
               onBack={leaveConversation}
               onClose={() => setIsChatDrawerOpen(false)}
+              onExpand={handleExpandChat}
               isConnected={isConnected}
             />
 
@@ -101,6 +117,7 @@ export default function ChatDrawer() {
               onSendMessage={sendMessage}
               onTyping={sendTyping}
               disabled={loadingMessages || !activeConversation}
+              sending={sendingMessage}
             />
           </>
         ) : (
@@ -119,15 +136,28 @@ export default function ChatDrawer() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setIsChatDrawerOpen(false)}
-                className="p-1.5 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] transition-colors cursor-pointer"
-                title="Close"
-                aria-label="Close"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExpandChat}
+                  className="min-h-[36px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-[var(--color-borders)]/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--color-primary-action)] transition-colors cursor-pointer shrink-0"
+                  title="Open full chat"
+                  aria-label="Open full chat"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Open full chat</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsChatDrawerOpen(false)}
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center p-2 rounded-xl text-[var(--color-secondary-text)] hover:text-[var(--color-main-text)] hover:bg-[var(--color-secondary-bg)] border border-transparent hover:border-[var(--color-borders)] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-[var(--color-primary-action)] transition-colors cursor-pointer shrink-0"
+                  title="Close"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 min-h-0">

@@ -37,7 +37,7 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
 
       {/* Message bubble */}
       <div
-        className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-sm break-words whitespace-pre-wrap leading-relaxed ${
+        className={`max-w-[85%] sm:max-w-[75%] md:max-w-[70%] rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-sm break-words [word-break:break-word] [overflow-wrap:anywhere] whitespace-pre-wrap leading-relaxed ${
           isOwn
             ? 'bg-[var(--color-primary-action)] text-white rounded-br-xs'
             : 'bg-[var(--color-card-bg)] text-[var(--color-main-text)] border border-[var(--color-borders)] rounded-bl-xs'
@@ -48,18 +48,23 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
 
         {/* Timestamp and delivery receipts */}
         <div
-          className={`flex items-center justify-end gap-1 mt-1 text-[10px] select-none ${
-            isOwn ? 'text-white/75' : 'text-[var(--color-secondary-text)]'
+          className={`flex items-center justify-end gap-1 mt-1 text-[10px] select-none font-medium ${
+            isOwn ? 'text-white/80' : 'text-[var(--color-secondary-text)]'
           }`}
         >
-          <span>{formatTime(message.createdAt)}</span>
+          {formatTime(message.createdAt) && (
+            <time dateTime={message.createdAt}>{formatTime(message.createdAt)}</time>
+          )}
 
           {isOwn && (
-            <span title={read ? 'Read by recipient' : 'Sent and delivered'}>
+            <span
+              title={read ? 'Read by recipient' : 'Sent and delivered'}
+              aria-label={read ? 'Read by recipient' : 'Sent and delivered'}
+            >
               {read ? (
-                <CheckCheck className="w-3 h-3 text-cyan-200" />
+                <CheckCheck className="w-3.5 h-3.5 text-cyan-200" aria-hidden="true" />
               ) : (
-                <Check className="w-3 h-3 text-white/70" />
+                <Check className="w-3.5 h-3.5 text-white/70" aria-hidden="true" />
               )}
             </span>
           )}
