@@ -545,6 +545,28 @@ export default function AttendeeDashboard() {
     loadDiscoverEvents,
   ]);
 
+  // Handle stale data safely in discovery mode when page stays open across start times or tab regains focus
+  useEffect(() => {
+    if (activeTab !== 'discovery') return;
+
+    const handleRevalidate = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadDiscoverEvents(discoverPage);
+        loadAllPublishedForCollections();
+      }
+    };
+
+    window.addEventListener('focus', handleRevalidate);
+    document.addEventListener('visibilitychange', handleRevalidate);
+    const interval = setInterval(handleRevalidate, 60000);
+
+    return () => {
+      window.removeEventListener('focus', handleRevalidate);
+      document.removeEventListener('visibilitychange', handleRevalidate);
+      clearInterval(interval);
+    };
+  }, [activeTab, discoverPage, loadDiscoverEvents, loadAllPublishedForCollections]);
+
   // Notification actions
   const handleMarkAsRead = async (id) => {
     try {

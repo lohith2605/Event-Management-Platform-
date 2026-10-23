@@ -47,26 +47,55 @@ export const processRazorpayRefund = async ({
     };
   }
 
+  const amountInPaise = Math.round(amount * 100);
+
+  const notes = {
+    bookingReference: bookingRef || 'UTSAV-BK',
+    reason: (reason || '').substring(0, 255),
+  };
+  if (adminId) {
+    notes.adminId = adminId.toString();
+  }
+
+  const receipt = (bookingRef || 'UTSAV-BK').substring(0, 40);
+
+  // 1. Pre-refund gateway check: Check if a refund already exists for this payment on Razorpay
   try {
-    const amountInPaise = Math.round(amount * 100);
+    if (typeof razorpay.payments.allRefunds === 'function') {
+      const existingRefunds = await razorpay.payments.allRefunds(paymentId);
+      const items = existingRefunds?.items || (Array.isArray(existingRefunds) ? existingRefunds : []);
+      if (items.length > 0) {
+        const matching = items.find(
+          (r) => r.receipt === receipt || r.notes?.bookingReference === bookingRef
+        ) || items[0];
 
-    const notes = {
-      bookingReference: bookingRef || 'UTSAV-BK',
-      reason: (reason || '').substring(0, 255),
-    };
-    if (adminId) {
-      notes.adminId = adminId.toString();
+        if (matching && matching.status !== 'failed') {
+          console.log(`ℹ️ [Razorpay Refund] Found existing refund ${matching.id} (${matching.status}) for ${paymentId}`);
+          return {
+            success: true,
+            status: matching.status === 'processed' ? 'processed' : 'initiated',
+            refundId: matching.id,
+            amount: (matching.amount || amountInPaise) / 100,
+            alreadyExists: true,
+            raw: matching,
+          };
+        }
+      }
     }
+  } catch (checkErr) {
+    console.warn(`⚠️ [Razorpay Refund Check] Could not inspect existing refunds for ${paymentId}:`, checkErr.message);
+  }
 
-    // Call Razorpay Payments Refund API
+  // 2. Request new refund with receipt identifier
+  try {
     const refund = await razorpay.payments.refund(paymentId, {
       amount: amountInPaise,
       notes,
+      receipt,
     });
 
     console.log(`✅ [Razorpay Refund] Created: ${refund.id} (status: ${refund.status}) for ${paymentId}`);
 
-    // Razorpay refund status: 'processed' or 'pending'
     const status = refund.status === 'processed' ? 'processed' : 'initiated';
 
     return {
@@ -83,11 +112,84 @@ export const processRazorpayRefund = async ({
       'Refund request rejected by payment provider.';
     console.error(`❌ [Razorpay Refund Error] Payment ${paymentId}:`, errorMessage);
 
+    // 3. Post-error gateway reconciliation: Check if refund was created despite gateway timeout / network drop
+    try {
+      if (typeof razorpay.payments.allRefunds === 'function') {
+        const postCheck = await razorpay.payments.allRefunds(paymentId);
+        const postItems = postCheck?.items || (Array.isArray(postCheck) ? postCheck : []);
+        const matching = postItems.find(
+          (r) => r.receipt === receipt || r.notes?.bookingReference === bookingRef
+        ) || postItems[0];
+
+        if (matching && matching.status !== 'failed') {
+          console.log(`✅ [Razorpay Refund Reconciled] Found created refund ${matching.id} after error for ${paymentId}`);
+          return {
+            success: true,
+            status: matching.status === 'processed' ? 'processed' : 'initiated',
+            refundId: matching.id,
+            amount: (matching.amount || amountInPaise) / 100,
+            reconciled: true,
+            raw: matching,
+          };
+        }
+      }
+    } catch (reconcileErr) {
+      console.warn(`⚠️ [Razorpay Refund Post-Check Failed] ${reconcileErr.message}`);
+    }
+
+    const isTimeout =
+      error?.code === 'ETIMEDOUT' ||
+      error?.code === 'ECONNRESET' ||
+      error?.code === 'ESOCKETTIMEDOUT' ||
+      /timeout|econnreset|socket/i.test(errorMessage);
+
     return {
       success: false,
       status: 'failed',
+      isAmbiguous: isTimeout,
       error: errorMessage,
     };
+  }
+};
+
+/**
+ * Reconciles the refund state of a payment with Razorpay without creating a new refund
+ * @param {string} paymentId
+ * @param {string} bookingRef
+ * @returns {Promise<{ found: boolean, refund?: Object, error?: string }>}
+ */
+export const reconcilePaymentRefund = async (paymentId, bookingRef) => {
+  if (!paymentId) return { found: false, error: 'Payment ID is required' };
+
+  const razorpay = getRazorpayInstance();
+  if (!razorpay || paymentId.startsWith('pay_Fake') || paymentId.startsWith('pay_Simulated')) {
+    return { found: false, simulated: true };
+  }
+
+  try {
+    if (typeof razorpay.payments.allRefunds === 'function') {
+      const res = await razorpay.payments.allRefunds(paymentId);
+      const items = res?.items || (Array.isArray(res) ? res : []);
+      const receipt = (bookingRef || '').substring(0, 40);
+      const matching = items.find(
+        (r) => r.receipt === receipt || r.notes?.bookingReference === bookingRef
+      ) || items[0];
+
+      if (matching && matching.status !== 'failed') {
+        return {
+          found: true,
+          refund: {
+            id: matching.id,
+            status: matching.status === 'processed' ? 'processed' : 'initiated',
+            amount: (matching.amount || 0) / 100,
+            raw: matching,
+          },
+        };
+      }
+    }
+    return { found: false };
+  } catch (err) {
+    return { found: false, error: err.message };
   }
 };
 
@@ -138,4 +240,5 @@ export const fetchRazorpayRefund = async (refundId) => {
 export default {
   processRazorpayRefund,
   fetchRazorpayRefund,
+  reconcilePaymentRefund,
 };

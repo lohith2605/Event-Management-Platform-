@@ -56,5 +56,14 @@ export const issueTicketsForBooking = async (booking, event, user) => {
     });
   }
 
-  return await Ticket.insertMany(ticketDocs);
+  try {
+    return await Ticket.insertMany(ticketDocs, { ordered: false });
+  } catch (err) {
+    if (err.code === 11000 || (err.writeErrors && err.writeErrors.some((e) => e.code === 11000))) {
+      // Concurrency race: Another thread already inserted tickets for this booking
+      const refetched = await Ticket.find({ bookingId: booking._id });
+      if (refetched.length > 0) return refetched;
+    }
+    throw err;
+  }
 };

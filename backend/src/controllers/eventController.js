@@ -1,6 +1,7 @@
 import Event from '../models/Event.js';
 import User from '../models/User.js';
 import Notification from '../models/Notification.js';
+import { getEventStartDateTime, getIstDateBounds } from '../utils/eventDateUtils.js';
 
 /**
  * @desc    Get published upcoming events with filtering, search, and pagination
@@ -71,66 +72,132 @@ export const getPublishedEvents = async (req, res, next) => {
       query.isFeatured = true;
     }
 
-    // 7. Date Filter ('today', 'this-weekend', 'this-week', 'this-month', 'upcoming')
+    // Reference instant for start-time cutoff
+    const now = req._referenceDate
+      ? new Date(req._referenceDate)
+      : req.query?._refDate
+      ? new Date(req.query._refDate)
+      : new Date();
+    const bounds = getIstDateBounds(now);
+
+    // Coarse index filter: Any event scheduled more than 48 hours before start of today IST is definitely past
+    const coarseLowerBound = new Date(bounds.startOfToday.getTime() - 48 * 60 * 60 * 1000);
+    let coarseUpperBound = null;
+
     if (date && date !== 'all' && date !== 'All Dates') {
-      const now = new Date();
       if (date === 'today') {
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        query.isoDate = { $gte: startOfDay, $lte: endOfDay };
+        coarseUpperBound = new Date(bounds.endOfToday.getTime() + 24 * 60 * 60 * 1000);
       } else if (date === 'this-weekend' || date === 'weekend') {
-        const currentDay = now.getDay(); // 0 is Sunday, 5 is Friday, 6 is Saturday
-        const daysToFriday = (5 - currentDay + 7) % 7;
-        const weekendStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (currentDay === 6 ? -1 : currentDay === 0 ? -2 : daysToFriday), 0, 0, 0);
-        const daysToSunday = (7 - currentDay) % 7;
-        const weekendEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday, 23, 59, 59, 999);
-        query.isoDate = { $gte: weekendStart, $lte: weekendEnd };
+        coarseUpperBound = new Date(bounds.endOfWeekend.getTime() + 24 * 60 * 60 * 1000);
       } else if (date === 'this-week') {
-        const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        const endOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (7 - now.getDay()), 23, 59, 59, 999);
-        query.isoDate = { $gte: startOfWeek, $lte: endOfWeek };
+        coarseUpperBound = new Date(bounds.endOfWeek.getTime() + 24 * 60 * 60 * 1000);
       } else if (date === 'this-month') {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        query.isoDate = { $gte: startOfMonth, $lte: endOfMonth };
-      } else if (date === 'upcoming') {
-        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        query.isoDate = { $gte: startOfToday };
+        coarseUpperBound = new Date(bounds.endOfMonth.getTime() + 24 * 60 * 60 * 1000);
       }
     }
 
-    // Sorting
-    let sortOptions = { isoDate: 1 }; // Default: Soonest first
-    if (sort === 'latest') {
-      sortOptions = { isoDate: -1 };
-    } else if (sort === 'price-low') {
-      sortOptions = { priceNumber: 1, isoDate: 1 };
-    } else if (sort === 'price-high') {
-      sortOptions = { priceNumber: -1, isoDate: 1 };
-    } else if (sort === 'popular') {
-      sortOptions = { spotsLeft: 1, isoDate: 1 };
-    } else if (sort === 'newest') {
-      sortOptions = { createdAt: -1 };
-    } else if (sort === 'rating' || sort === 'top-rated') {
-      sortOptions = { averageRating: -1, reviewCount: -1 };
+    if (coarseUpperBound) {
+      query.isoDate = { $gte: coarseLowerBound, $lte: coarseUpperBound };
+    } else {
+      query.isoDate = { $gte: coarseLowerBound };
     }
 
+    // Fetch candidate documents matching database criteria
+    const candidates = await Event.find(query);
+
+    // Strictly evaluate candidates with getEventStartDateTime
+    const eligibleEvents = [];
+    for (const evt of candidates) {
+      // Must be published and not cancelled
+      if (evt.status !== 'published') continue;
+
+      const startDateTime = getEventStartDateTime(evt);
+      // Exclude events with missing, invalid, or ambiguous start timestamps
+      if (!startDateTime || isNaN(startDateTime.getTime())) continue;
+
+      // Exclude events whose actual start instant is at or before current time
+      if (startDateTime.getTime() <= now.getTime()) continue;
+
+      // Strict IST date filters
+      if (date && date !== 'all' && date !== 'All Dates') {
+        if (date === 'today') {
+          if (
+            startDateTime.getTime() < bounds.startOfToday.getTime() ||
+            startDateTime.getTime() > bounds.endOfToday.getTime()
+          ) {
+            continue;
+          }
+        } else if (date === 'this-weekend' || date === 'weekend') {
+          if (
+            startDateTime.getTime() < bounds.startOfWeekend.getTime() ||
+            startDateTime.getTime() > bounds.endOfWeekend.getTime()
+          ) {
+            continue;
+          }
+        } else if (date === 'this-week') {
+          if (
+            startDateTime.getTime() < bounds.startOfWeek.getTime() ||
+            startDateTime.getTime() > bounds.endOfWeek.getTime()
+          ) {
+            continue;
+          }
+        } else if (date === 'this-month') {
+          if (
+            startDateTime.getTime() < bounds.startOfMonth.getTime() ||
+            startDateTime.getTime() > bounds.endOfMonth.getTime()
+          ) {
+            continue;
+          }
+        } else if (date === 'upcoming') {
+          // Already verified startDateTime > now
+        }
+      }
+
+      eligibleEvents.push({ doc: evt, startDateTime });
+    }
+
+    // Sorting
+    eligibleEvents.sort((a, b) => {
+      if (sort === 'latest') {
+        return b.startDateTime.getTime() - a.startDateTime.getTime();
+      }
+      if (sort === 'price-low') {
+        const diff = (a.doc.priceNumber || 0) - (b.doc.priceNumber || 0);
+        return diff !== 0 ? diff : a.startDateTime.getTime() - b.startDateTime.getTime();
+      }
+      if (sort === 'price-high') {
+        const diff = (b.doc.priceNumber || 0) - (a.doc.priceNumber || 0);
+        return diff !== 0 ? diff : a.startDateTime.getTime() - b.startDateTime.getTime();
+      }
+      if (sort === 'popular') {
+        const diff = (a.doc.spotsLeft || 0) - (b.doc.spotsLeft || 0);
+        return diff !== 0 ? diff : a.startDateTime.getTime() - b.startDateTime.getTime();
+      }
+      if (sort === 'newest') {
+        return new Date(b.doc.createdAt || 0).getTime() - new Date(a.doc.createdAt || 0).getTime();
+      }
+      if (sort === 'rating' || sort === 'top-rated') {
+        const diff = (b.doc.averageRating || 0) - (a.doc.averageRating || 0);
+        return diff !== 0 ? diff : (b.doc.reviewCount || 0) - (a.doc.reviewCount || 0);
+      }
+      // Default: 'soonest'
+      return a.startDateTime.getTime() - b.startDateTime.getTime();
+    });
+
+    const total = eligibleEvents.length;
     const currentPage = Math.max(1, parseInt(page, 10) || 1);
     const pageLimit = Math.min(50, Math.max(1, parseInt(limit, 10) || 12));
+    const totalPages = Math.ceil(total / pageLimit) || 1;
     const skip = (currentPage - 1) * pageLimit;
-
-    const [events, total] = await Promise.all([
-      Event.find(query).sort(sortOptions).skip(skip).limit(pageLimit),
-      Event.countDocuments(query),
-    ]);
+    const paginatedEvents = eligibleEvents.slice(skip, skip + pageLimit).map((item) => item.doc);
 
     res.status(200).json({
       success: true,
-      count: events.length,
+      count: paginatedEvents.length,
       total,
       page: currentPage,
-      pages: Math.ceil(total / pageLimit) || 1,
-      events,
+      pages: totalPages,
+      events: paginatedEvents,
     });
   } catch (error) {
     next(error);
@@ -138,21 +205,35 @@ export const getPublishedEvents = async (req, res, next) => {
 };
 
 /**
- * @desc    Get real published category event counts
+ * @desc    Get real published category event counts for upcoming events
  * @route   GET /api/events/categories
  * @access  Public
  */
 export const getEventCategories = async (req, res, next) => {
   try {
-    const counts = await Event.aggregate([
-      { $match: { status: 'published' } },
-      { $group: { _id: '$category', count: { $sum: 1 } } },
-    ]);
+    const now = req._referenceDate
+      ? new Date(req._referenceDate)
+      : req.query?._refDate
+      ? new Date(req.query._refDate)
+      : new Date();
+    const bounds = getIstDateBounds(now);
+    const coarseLowerBound = new Date(bounds.startOfToday.getTime() - 48 * 60 * 60 * 1000);
+
+    const events = await Event.find({
+      status: 'published',
+      isoDate: { $gte: coarseLowerBound },
+    }).select('category isoDate time status');
 
     const countMap = {};
-    counts.forEach((item) => {
-      if (item._id) countMap[item._id] = item.count;
-    });
+    for (const evt of events) {
+      if (evt.status !== 'published') continue;
+      const startDateTime = getEventStartDateTime(evt);
+      if (!startDateTime || isNaN(startDateTime.getTime())) continue;
+      if (startDateTime.getTime() <= now.getTime()) continue;
+      if (evt.category) {
+        countMap[evt.category] = (countMap[evt.category] || 0) + 1;
+      }
+    }
 
     res.status(200).json({
       success: true,
@@ -162,6 +243,7 @@ export const getEventCategories = async (req, res, next) => {
     next(error);
   }
 };
+
 
 /**
  * @desc    Get single event by ID

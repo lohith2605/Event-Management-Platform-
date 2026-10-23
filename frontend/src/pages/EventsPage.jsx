@@ -112,6 +112,24 @@ export default function EventsPage() {
     loadEvents();
   }, [loadEvents]);
 
+  // Handle stale data safely when page stays open across an event's start time or user returns
+  useEffect(() => {
+    const handleRevalidate = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadEvents();
+      }
+    };
+    window.addEventListener('focus', handleRevalidate);
+    document.addEventListener('visibilitychange', handleRevalidate);
+    const interval = setInterval(handleRevalidate, 60000);
+
+    return () => {
+      window.removeEventListener('focus', handleRevalidate);
+      document.removeEventListener('visibilitychange', handleRevalidate);
+      clearInterval(interval);
+    };
+  }, [loadEvents]);
+
   const activeFilterCount =
     (categoryParam !== 'All' ? 1 : 0) +
     (cityParam !== 'All Cities' ? 1 : 0) +

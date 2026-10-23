@@ -4,49 +4,12 @@ import Ticket from '../models/Ticket.js';
 import Notification from '../models/Notification.js';
 import { sendReminderEmailForBooking } from './emailService.js';
 import { createAndEmitNotification } from './notificationService.js';
+import { getEventStartDateTime } from '../utils/eventDateUtils.js';
 
 let schedulerInterval = null;
 let isProcessing = false;
 
-/**
- * Calculates the exact UTC start timestamp for an event.
- * Handles isoDate and display time parsing.
- */
-export const getEventStartDateTime = (event) => {
-  if (!event || !event.isoDate) return null;
-  const iso = new Date(event.isoDate);
-  if (isNaN(iso.getTime())) return null;
-
-  // If isoDate has hours/minutes set, return directly
-  if (iso.getUTCHours() !== 0 || iso.getUTCMinutes() !== 0) {
-    return iso;
-  }
-
-  // If time string is present (e.g. '10:00 AM IST' or '6:30 PM')
-  if (event.time && typeof event.time === 'string') {
-    const match = event.time.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?(?:\s*([A-Z]{3}))?/i);
-    if (match) {
-      let hours = parseInt(match[1], 10);
-      const minutes = parseInt(match[2], 10);
-      const meridiem = (match[3] || '').toUpperCase();
-      const tz = (match[4] || '').toUpperCase();
-
-      if (meridiem === 'PM' && hours < 12) hours += 12;
-      if (meridiem === 'AM' && hours === 12) hours = 0;
-
-      // Default timezone is IST (+05:30) if IST or unspecified
-      const tzOffsetMinutes = tz === 'UTC' || tz === 'GMT' ? 0 : 330; // 5.5 hours for IST
-
-      const startUtc = new Date(iso);
-      startUtc.setUTCHours(hours, minutes, 0, 0);
-      // Adjust for timezone offset
-      startUtc.setTime(startUtc.getTime() - tzOffsetMinutes * 60 * 1000);
-      return startUtc;
-    }
-  }
-
-  return iso;
-};
+export { getEventStartDateTime };
 
 /**
  * Core reminder processing logic.

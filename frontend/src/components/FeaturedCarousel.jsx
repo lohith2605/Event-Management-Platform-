@@ -65,14 +65,33 @@ export default function FeaturedCarousel({
     loadFeaturedEvents();
   }, [loadFeaturedEvents]);
 
-  // Listen for browser tab visibility to avoid background timer accumulation
+  // Listen for browser tab visibility and focus to revalidate stale data and manage rotation
   useEffect(() => {
     const handleVisibilityChange = () => {
-      setIsTabHidden(document.hidden);
+      const hidden = typeof document !== 'undefined' ? document.hidden : false;
+      setIsTabHidden(hidden);
+      if (!hidden) {
+        loadFeaturedEvents();
+      }
     };
+    const handleFocus = () => {
+      loadFeaturedEvents();
+    };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+    window.addEventListener('focus', handleFocus);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadFeaturedEvents();
+      }
+    }, 60000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [loadFeaturedEvents]);
 
   const handleImageError = (eventId) => {
     setFailedImages((prev) => ({ ...prev, [eventId]: true }));

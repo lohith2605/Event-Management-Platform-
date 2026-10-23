@@ -25,6 +25,10 @@ import {
   notifyAttendeeBookingConfirmed,
   notifyAttendeeBookingCancelled,
 } from '../services/notificationService.js';
+import {
+  checkBookingEligibility,
+  getEventStartDateTime,
+} from '../utils/eventDateUtils.js';
 
 /**
  * @desc    Validate a coupon code and preview discount calculation for checkout
@@ -56,6 +60,16 @@ export const validateCouponForCheckout = async (req, res, next) => {
       return res.status(404).json({
         success: false,
         message: 'This event is unavailable or not published.',
+      });
+    }
+
+    const startDateTime = getEventStartDateTime(event);
+    if (!startDateTime || startDateTime.getTime() <= Date.now()) {
+      return res.status(400).json({
+        success: false,
+        valid: false,
+        message: 'This event has already started or concluded and is no longer accepting coupons.',
+        reason: 'EVENT_ALREADY_STARTED',
       });
     }
 
@@ -127,12 +141,14 @@ export const createBooking = async (req, res, next) => {
     // Clean up expired checkout holds before checking capacity
     await releaseExpiredBookingHolds();
 
-    // Check if event exists and is published
+    // Check if event exists, is published, and is eligible to accept bookings
     const existingEvent = await Event.findById(eventId);
-    if (!existingEvent || existingEvent.status !== 'published') {
-      return res.status(404).json({
+    const eligibility = checkBookingEligibility(existingEvent, qty);
+    if (!eligibility.eligible) {
+      return res.status(eligibility.status || 400).json({
         success: false,
-        message: 'This event is either unpublished or no longer available for booking.',
+        message: eligibility.message,
+        reason: eligibility.reason,
       });
     }
 

@@ -16,31 +16,48 @@ export const releaseSingleBookingHold = async (booking, reason = 'Checkout hold 
     return booking;
   }
 
-  // Restore inventory spots atomically
-  await Event.findByIdAndUpdate(booking.eventId, {
-    $inc: { spotsLeft: booking.quantity },
-  });
+  // Atomically claim inventory restoration to guarantee single execution across concurrent calls
+  const claimed = await Booking.findOneAndUpdate(
+    { _id: booking._id, inventoryRestored: { $ne: true } },
+    {
+      $set: {
+        inventoryRestored: true,
+        status: 'cancelled',
+        paymentStatus: 'failed',
+        cancelledAt: new Date(),
+        cancellationReason: reason,
+        paymentFailureReason: reason,
+      },
+    },
+    { new: true }
+  );
 
-  booking.status = 'cancelled';
-  booking.paymentStatus = 'failed';
-  booking.cancelledAt = new Date();
-  booking.cancellationReason = reason;
-  booking.paymentFailureReason = reason;
-  await booking.save();
-
-  // Create notification in real time via Socket.IO
-  try {
-    await createAndEmitNotification({
-      userId: booking.userId,
-      title: 'Booking Reservation Expired',
-      message: `Your reservation ${booking.bookingReference} has expired because payment was not completed within 10 minutes. The held tickets have been released back to general availability.`,
-      type: 'system',
-      link: '/attendee/bookings',
-      metadata: { bookingReference: booking.bookingReference, eventId: booking.eventId },
-      idempotencyKey: `hold_expired_${booking._id}`,
+  if (claimed) {
+    // Restore inventory spots atomically exactly once
+    await Event.findByIdAndUpdate(booking.eventId, {
+      $inc: { spotsLeft: booking.quantity },
     });
-  } catch (err) {
-    // Non-blocking notification failure
+    booking.status = 'cancelled';
+    booking.paymentStatus = 'failed';
+    booking.inventoryRestored = true;
+    booking.cancelledAt = claimed.cancelledAt;
+    booking.cancellationReason = reason;
+    booking.paymentFailureReason = reason;
+
+    // Create notification in real time via Socket.IO
+    try {
+      await createAndEmitNotification({
+        userId: booking.userId,
+        title: 'Booking Reservation Expired',
+        message: `Your reservation ${booking.bookingReference} has expired because payment was not completed within 10 minutes. The held tickets have been released back to general availability.`,
+        type: 'system',
+        link: '/attendee/bookings',
+        metadata: { bookingReference: booking.bookingReference, eventId: booking.eventId },
+        idempotencyKey: `hold_expired_${booking._id}`,
+      });
+    } catch (err) {
+      // Non-blocking notification failure
+    }
   }
 
   return booking;

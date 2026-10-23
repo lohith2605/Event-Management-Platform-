@@ -72,5 +72,6 @@ const TicketSchema = new mongoose.Schema(
 
 TicketSchema.index({ userId: 1, status: 1 });
 TicketSchema.index({ eventId: 1, status: 1 });
+TicketSchema.index({ bookingId: 1, seatNumber: 1 }, { unique: true });
 
 export default mongoose.model('Ticket', TicketSchema);

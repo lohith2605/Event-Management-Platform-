@@ -109,6 +109,24 @@ export default function HomePage() {
     loadData(0);
   }, [loadData]);
 
+  // Handle stale data safely when a page stays open across an event's start time or user returns
+  useEffect(() => {
+    const handleRevalidate = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        loadData(0);
+      }
+    };
+    window.addEventListener('focus', handleRevalidate);
+    document.addEventListener('visibilitychange', handleRevalidate);
+    const interval = setInterval(handleRevalidate, 60000);
+
+    return () => {
+      window.removeEventListener('focus', handleRevalidate);
+      document.removeEventListener('visibilitychange', handleRevalidate);
+      clearInterval(interval);
+    };
+  }, [loadData]);
+
   // Client-side filtering on genuine fetched events for immediate responsiveness
   const filteredEvents = useMemo(() => {
     return events.filter((evt) => {

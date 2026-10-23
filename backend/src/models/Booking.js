@@ -109,6 +109,16 @@ const BookingSchema = new mongoose.Schema(
       type: Date,
       index: true,
     },
+    inventoryRestored: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    verificationLockAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
     paymentFailureReason: {
       type: String,
       trim: true,
