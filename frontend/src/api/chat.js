@@ -260,4 +260,17 @@ export const deleteConversationApi = async (conversationId) => {
   return handleResponse(response);
 };
 
+export const fetchPresenceApi = async (userIds = []) => {
+  const query = Array.isArray(userIds) && userIds.length > 0
+    ? `?userIds=${encodeURIComponent(userIds.join(','))}`
+    : '';
+  const response = await fetch(`/api/chat/presence${query}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
+  return handleResponse(response);
+};
+
+
 

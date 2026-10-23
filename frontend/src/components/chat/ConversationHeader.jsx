@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, X, ShieldCheck, Maximize2, Search, Files, MoreVertical, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
+import { getOtherParticipantId } from '../../utils/chatUtils';
 import PinnedMessageBanner from './PinnedMessageBanner';
 import DeleteConversationModal from './DeleteConversationModal';
 
@@ -14,7 +15,8 @@ export default function ConversationHeader({
   isSearchOpen = false,
   onToggleShared,
   isSharedOpen: propIsSharedOpen,
-  isConnected = true,
+  isConnected,
+  isOnline: propIsOnline,
   showBackButton = true,
 }) {
   const { user } = useAuth();
@@ -172,6 +174,15 @@ export default function ConversationHeader({
   const eventTitle = (typeof rawEvent === 'object' && rawEvent?.title) ? rawEvent.title : 'Event Chat';
   const initial = (otherParticipant?.name && otherParticipant.name[0]) ? otherParticipant.name[0].toUpperCase() : 'U';
 
+  const fallbackOtherId = getOtherParticipantId(conversation, user);
+  const targetUserId = otherParticipant?._id || fallbackOtherId;
+  const isParticipantOnline =
+    typeof propIsOnline === 'boolean'
+      ? propIsOnline
+      : (typeof chatContext?.isUserOnline === 'function' && targetUserId
+          ? chatContext.isUserOnline(targetUserId)
+          : false);
+
   const roleBadge = () => {
     const role = (otherParticipant?.role || 'user').toLowerCase();
     if (role === 'admin') {
@@ -217,12 +228,13 @@ export default function ConversationHeader({
           <div className="w-10 h-10 rounded-2xl bg-[var(--color-primary-action)]/15 border border-[var(--color-primary-action)]/25 text-[var(--color-primary-action)] font-black text-sm flex items-center justify-center">
             {initial}
           </div>
-          {/* Real-time Connection Indicator */}
+          {/* Real-time Online/Offline Presence Indicator */}
           <span
-            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[var(--color-card-bg)] ${
-              isConnected ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'
+            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[var(--color-card-bg)] transition-colors duration-300 ${
+              isParticipantOnline ? 'bg-emerald-500' : 'bg-red-500'
             }`}
-            title={isConnected ? 'Connected in real time' : 'Reconnecting...'}
+            title={isParticipantOnline ? 'Online' : 'Offline'}
+            aria-label={`${otherParticipant?.name || 'Participant'} is ${isParticipantOnline ? 'online' : 'offline'}`}
           />
         </div>
 
@@ -233,6 +245,22 @@ export default function ConversationHeader({
               {otherParticipant?.name || 'Chat'}
             </h3>
             {roleBadge()}
+            <span
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                isParticipantOnline
+                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                  : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+              }`}
+              title={isParticipantOnline ? 'Online' : 'Offline'}
+              aria-label={`${otherParticipant?.name || 'Participant'} is ${isParticipantOnline ? 'online' : 'offline'}`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isParticipantOnline ? 'bg-emerald-500' : 'bg-red-500'
+                }`}
+              />
+              {isParticipantOnline ? 'Online' : 'Offline'}
+            </span>
           </div>
 
           <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-secondary-text)] truncate">

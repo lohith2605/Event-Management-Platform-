@@ -13,6 +13,7 @@ export function SocketProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
   const [socket, setSocket] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState(new Set()); // Set of authenticated online user IDs
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState([]);
   const [latestNotification, setLatestNotification] = useState(null);
@@ -20,6 +21,19 @@ export function SocketProvider({ children }) {
   const [loading, setLoading] = useState(false);
   const socketRef = useRef(null);
   const toastedIdsRef = useRef(new Set());
+
+  // Check if a given user is currently online via active Socket.IO connection
+  const isUserOnline = useCallback(
+    (targetUserId) => {
+      if (!targetUserId) return false;
+      const idStr =
+        typeof targetUserId === 'object'
+          ? (targetUserId._id || targetUserId.id || targetUserId).toString()
+          : targetUserId.toString();
+      return onlineUsers.has(idStr);
+    },
+    [onlineUsers]
+  );
 
   // Dismiss a toast by its unique ID
   const dismissToast = useCallback((id) => {
@@ -128,6 +142,7 @@ export function SocketProvider({ children }) {
         socketRef.current = null;
         setSocket(null);
         setIsConnected(false);
+        setOnlineUsers(new Set());
       }
       return;
     }
@@ -162,6 +177,28 @@ export function SocketProvider({ children }) {
     socketClient.on('reconnect', () => {
       setIsConnected(true);
       refreshNotifications();
+    });
+
+    // Authoritative presence synchronization on initial connect / reconnect
+    socketClient.on('presence_sync', (payload) => {
+      const userIds = Array.isArray(payload?.onlineUserIds) ? payload.onlineUserIds : [];
+      setOnlineUsers(new Set(userIds.map(String)));
+    });
+
+    // Real-time presence change broadcast from server
+    socketClient.on('presence_change', (payload) => {
+      if (!payload || !payload.userId) return;
+      const targetId = payload.userId.toString();
+      const isOnline = payload.status === 'online' || payload.isOnline === true;
+      setOnlineUsers((prev) => {
+        const next = new Set(prev);
+        if (isOnline) {
+          next.add(targetId);
+        } else {
+          next.delete(targetId);
+        }
+        return next;
+      });
     });
 
     // Real-time private notification receiver
@@ -378,6 +415,8 @@ export function SocketProvider({ children }) {
     refreshNotifications,
     markAsRead,
     markAllAsRead,
+    onlineUsers,
+    isUserOnline,
   };
 
   return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;

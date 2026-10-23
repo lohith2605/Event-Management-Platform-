@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Search, MessageSquare, X, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
+import { getOtherParticipantId } from '../../utils/chatUtils';
 import DeleteConversationModal from './DeleteConversationModal';
 
 // Helper to safely extract participant name even if unpopulated
@@ -258,6 +259,12 @@ export default function ConversationList({
               ? formatRelativeTime(lastMsg.createdAt)
               : formatRelativeTime(c.updatedAt);
 
+            const otherParticipantId = getOtherParticipantId(c, user);
+            const isOtherOnline =
+              typeof chatContext?.isUserOnline === 'function' && otherParticipantId
+                ? chatContext.isUserOnline(otherParticipantId)
+                : false;
+
             return (
               <div
                 key={c._id}
@@ -273,9 +280,18 @@ export default function ConversationList({
                   aria-selected={isActive}
                   className="w-full text-left p-3.5 flex items-start gap-3 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary-action)]"
                 >
-                  {/* Avatar / Initial */}
-                  <div className="w-10 h-10 rounded-2xl bg-[var(--color-primary-action)]/15 border border-[var(--color-primary-action)]/20 text-[var(--color-primary-action)] font-black text-sm flex items-center justify-center shrink-0">
-                    {otherParticipantName ? otherParticipantName[0].toUpperCase() : 'U'}
+                  {/* Avatar / Initial with Real-time Online/Offline Presence Indicator */}
+                  <div className="relative shrink-0">
+                    <div className="w-10 h-10 rounded-2xl bg-[var(--color-primary-action)]/15 border border-[var(--color-primary-action)]/20 text-[var(--color-primary-action)] font-black text-sm flex items-center justify-center shrink-0">
+                      {otherParticipantName ? otherParticipantName[0].toUpperCase() : 'U'}
+                    </div>
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[var(--color-card-bg)] transition-colors duration-300 ${
+                        isOtherOnline ? 'bg-emerald-500' : 'bg-red-500'
+                      }`}
+                      title={isOtherOnline ? 'Online' : 'Offline'}
+                      aria-label={`${otherParticipantName} is ${isOtherOnline ? 'online' : 'offline'}`}
+                    />
                   </div>
 
                   {/* Details */}

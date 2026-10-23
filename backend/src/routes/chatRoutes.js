@@ -18,6 +18,7 @@ import {
   unpinMessage,
   getSharedContent,
   deleteConversation,
+  getPresenceStatus,
 } from '../controllers/chatController.js';
 import { protect } from '../middlewares/auth.js';
 import { handleAttachmentUpload } from '../middlewares/upload.js';
@@ -27,6 +28,7 @@ const router = express.Router();
 // All chat routes are strictly protected by session & JWT authentication
 router.use(protect);
 
+router.get('/presence', getPresenceStatus);
 router.get('/conversations', getUserConversations);
 router.post('/conversations', createOrGetConversation);
 router.get('/unread-count', getUnreadCount);

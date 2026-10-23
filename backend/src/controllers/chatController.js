@@ -16,6 +16,8 @@ import {
   emitToConversation,
   emitToUser,
   emitToRole,
+  getOnlineUserIds,
+  getUsersPresence,
 } from '../services/socketService.js';
 import {
   uploadChatAttachmentToCloudinary,
@@ -1607,6 +1609,34 @@ export const deleteConversation = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @desc    Get real-time online presence status for requested user IDs or all online users
+ * @route   GET /api/chat/presence
+ * @access  Private
+ */
+export const getPresenceStatus = async (req, res, next) => {
+  try {
+    const { userIds } = req.query;
+    if (userIds) {
+      const ids = userIds.split(',').map((id) => id.trim()).filter(Boolean);
+      const presence = getUsersPresence(ids);
+      return res.status(200).json({
+        success: true,
+        presence,
+      });
+    }
+
+    const onlineUserIds = getOnlineUserIds();
+    return res.status(200).json({
+      success: true,
+      onlineUserIds,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 
 
 

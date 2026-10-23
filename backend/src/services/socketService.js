@@ -10,6 +10,62 @@ import logger from '../utils/logger.js';
 let ioInstance = null;
 
 /**
+ * In-memory map of active authenticated connections per user:
+ * Map<userId (string), Set<socketId (string)>>
+ */
+const activeUserSockets = new Map();
+
+/**
+ * Checks if a user is currently online via at least one authenticated active socket
+ * @param {string|mongoose.Types.ObjectId} userId
+ * @returns {boolean}
+ */
+export const isUserOnline = (userId) => {
+  if (!userId) return false;
+  const uid = userId.toString();
+  const sockets = activeUserSockets.get(uid);
+  return Boolean(sockets && sockets.size > 0);
+};
+
+/**
+ * Returns an array of all currently online user IDs
+ * @returns {string[]}
+ */
+export const getOnlineUserIds = () => {
+  const online = [];
+  for (const [userId, sockets] of activeUserSockets.entries()) {
+    if (sockets && sockets.size > 0) {
+      online.push(userId);
+    }
+  }
+  return online;
+};
+
+/**
+ * Returns a dictionary mapping each requested user ID to their boolean online status
+ * @param {string[]} userIds
+ * @returns {Record<string, boolean>}
+ */
+export const getUsersPresence = (userIds = []) => {
+  const result = {};
+  if (!Array.isArray(userIds)) return result;
+  for (const id of userIds) {
+    if (id) {
+      const uidStr = id.toString();
+      result[uidStr] = isUserOnline(uidStr);
+    }
+  }
+  return result;
+};
+
+/**
+ * Helper to reset presence tracking state (used in test isolation)
+ */
+export const _resetPresenceTracking = () => {
+  activeUserSockets.clear();
+};
+
+/**
  * Safely parse cookies from HTTP header string
  */
 const parseCookies = (cookieHeader) => {
@@ -113,6 +169,15 @@ export const initSocket = (httpServer) => {
     const userId = socket.userId;
     const role = socket.userRole;
 
+    // Track active socket connection for authenticated user
+    let userSockets = activeUserSockets.get(userId);
+    const wasOffline = !userSockets || userSockets.size === 0;
+    if (!userSockets) {
+      userSockets = new Set();
+      activeUserSockets.set(userId, userSockets);
+    }
+    userSockets.add(socket.id);
+
     // Join private room dedicated to this authenticated user
     const userRoom = `user:${userId}`;
     socket.join(userRoom);
@@ -121,11 +186,64 @@ export const initSocket = (httpServer) => {
     const roleRoom = `role:${role}`;
     socket.join(roleRoom);
 
-    logger.info(`Socket connected: user=${userId} (${role}), socketId=${socket.id}`);
+    logger.info(`Socket connected: user=${userId} (${role}), socketId=${socket.id}, activeSockets=${userSockets.size}`);
+
+    // If transitioned from offline to online, broadcast presence update
+    if (wasOffline) {
+      ioInstance.emit('presence_change', {
+        userId,
+        status: 'online',
+        isOnline: true,
+      });
+    }
+
+    // Deliver authoritative current presence state to this newly connected client
+    socket.emit('presence_sync', {
+      onlineUserIds: getOnlineUserIds(),
+    });
 
     // Client heartbeat
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
+    });
+
+    /**
+     * Request presence for specific users or all online users
+     */
+    socket.on('get_presence', (data, callback) => {
+      if (Array.isArray(data?.userIds) && data.userIds.length > 0) {
+        const presence = getUsersPresence(data.userIds);
+        if (typeof callback === 'function') {
+          callback({ success: true, presence });
+        } else {
+          socket.emit('presence_batch', { presence });
+        }
+      } else {
+        const onlineUserIds = getOnlineUserIds();
+        if (typeof callback === 'function') {
+          callback({ success: true, onlineUserIds });
+        } else {
+          socket.emit('presence_sync', { onlineUserIds });
+        }
+      }
+    });
+
+    // Handle socket disconnection cleanly
+    socket.on('disconnect', (reason) => {
+      logger.info(`Socket disconnected: user=${userId}, socketId=${socket.id}, reason=${reason}`);
+      const sockets = activeUserSockets.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (sockets.size === 0) {
+          activeUserSockets.delete(userId);
+          // Emitted only when the user's overall status transitions from online to offline
+          ioInstance.emit('presence_change', {
+            userId,
+            status: 'offline',
+            isOnline: false,
+          });
+        }
+      }
     });
 
     // =========================================================================

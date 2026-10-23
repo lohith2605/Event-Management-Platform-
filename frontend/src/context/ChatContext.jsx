@@ -22,13 +22,14 @@ import {
   unpinMessageApi,
   fetchSharedContentApi,
   deleteConversationApi,
+  fetchPresenceApi,
 } from '../api/chat';
 
 const ChatContext = createContext(null);
 
 export function ChatProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
-  const { socket, isConnected, dismissChatToast } = useSocket();
+  const { socket, isConnected, dismissChatToast, onlineUsers, isUserOnline } = useSocket();
 
   // State
   const [conversations, setConversations] = useState([]);
@@ -1767,6 +1768,8 @@ export function ChatProvider({ children }) {
     deleteConversation,
     isConnected,
     otherParticipantId,
+    onlineUsers,
+    isUserOnline,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
