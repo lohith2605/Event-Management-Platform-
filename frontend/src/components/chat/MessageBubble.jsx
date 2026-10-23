@@ -14,6 +14,10 @@ import {
   FileText,
   FileSpreadsheet,
   Loader2,
+  Reply,
+  Forward,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
@@ -106,8 +110,19 @@ const aggregateReactions = (reactions = [], currentUserId) => {
 
 export default function MessageBubble({ message, isOwn, otherParticipantId }) {
   const { user } = useAuth();
-  const { toggleReaction, editMessage, deleteMessage, downloadAttachment, activeConversation } =
-    useChat();
+  const {
+    toggleReaction,
+    editMessage,
+    deleteMessage,
+    downloadAttachment,
+    activeConversation,
+    highlightedMessageId,
+    jumpToMessage,
+    setReplyingTo,
+    setForwardingMessage,
+    pinMessage,
+    unpinMessage,
+  } = useChat();
 
   const [showPicker, setShowPicker] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -120,6 +135,9 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
   const [imageError, setImageError] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState('');
+  const [jumpError, setJumpError] = useState('');
+  const [isPinning, setIsPinning] = useState(false);
+  const [pinError, setPinError] = useState('');
 
   const pickerRef = useRef(null);
   const editInputRef = useRef(null);
@@ -207,6 +225,44 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
   const currentUserId = extractId(user?._id || user?.id || user);
   const targetMsgId = extractId(message?._id || message?.id);
   const aggregatedReactions = aggregateReactions(message?.reactions, currentUserId);
+  const isHighlighted = Boolean(
+    highlightedMessageId && extractId(highlightedMessageId) === targetMsgId
+  );
+  const pinnedMsgId = extractId(activeConversation?.pinnedMessage?.messageId);
+  const isPinned = Boolean(
+    message?.isPinned || (pinnedMsgId && pinnedMsgId === targetMsgId)
+  );
+
+  const handleTogglePin = async () => {
+    if (isPinning || !targetMsgId || message.isDeleted) return;
+    try {
+      setIsPinning(true);
+      setPinError('');
+      if (isPinned) {
+        if (unpinMessage) {
+          const res = await unpinMessage(targetMsgId);
+          if (res && res.error) {
+            setPinError(res.error);
+            setTimeout(() => setPinError(''), 4000);
+          }
+        }
+      } else {
+        if (pinMessage) {
+          const res = await pinMessage(targetMsgId);
+          if (res && res.error) {
+            setPinError(res.error);
+            setTimeout(() => setPinError(''), 4000);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to toggle pin:', err);
+      setPinError(err.message || 'Failed to update pin');
+      setTimeout(() => setPinError(''), 4000);
+    } finally {
+      setIsPinning(false);
+    }
+  };
 
   const handleSelectEmoji = (emoji) => {
     setShowPicker(false);
@@ -321,8 +377,28 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
     }
   };
 
+  const handleJumpToOriginal = async () => {
+    const targetId = message.replySnapshot?.messageId || message.replyToMessageId;
+    if (!targetId || !jumpToMessage) return;
+    try {
+      const res = await jumpToMessage(targetId);
+      if (res && res.error) {
+        setJumpError(res.error);
+        setTimeout(() => setJumpError(''), 3500);
+      }
+    } catch (err) {
+      setJumpError(err.message || 'Original message is unavailable.');
+      setTimeout(() => setJumpError(''), 3500);
+    }
+  };
+
   return (
-    <div className={`flex flex-col mb-3 group ${isOwn ? 'items-end' : 'items-start'}`}>
+    <div
+      id={`chat-message-${targetMsgId}`}
+      className={`flex flex-col mb-3 group scroll-mt-16 transition-all duration-300 rounded-2xl ${
+        isOwn ? 'items-end' : 'items-start'
+      }`}
+    >
       {/* Sender name on incoming message */}
       {!isOwn && (
         <span className="text-[10px] font-bold text-[var(--color-secondary-text)] mb-1 px-1">
@@ -343,7 +419,11 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
       >
         {/* Message bubble */}
         <div
-          className={`w-full rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-sm break-words [word-break:break-word] [overflow-wrap:anywhere] leading-relaxed transition-all ${
+          className={`w-full rounded-2xl px-4 py-2.5 shadow-xs text-xs sm:text-sm break-words [word-break:break-word] [overflow-wrap:anywhere] leading-relaxed transition-all duration-300 ${
+            isHighlighted
+              ? 'ring-3 ring-[var(--color-primary-action)] ring-offset-2 ring-offset-[var(--color-card-bg)] shadow-lg animate-pulse scale-[1.01]'
+              : ''
+          } ${
             message.isDeleted
               ? 'bg-[var(--color-card-bg)] text-[var(--color-secondary-text)] border border-[var(--color-borders)]/60 italic rounded-br-xs'
               : isOwn
@@ -418,6 +498,118 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
           ) : (
             /* Active message rendering */
             <div className="flex flex-col">
+              {/* Pinned Indicator Badge */}
+              {isPinned && (
+                <div
+                  className={`inline-flex items-center gap-1 mb-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide self-start ${
+                    isOwn
+                      ? 'bg-white/20 text-white'
+                      : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                  }`}
+                  title="This message is pinned in the conversation"
+                  aria-label="Pinned message"
+                >
+                  <Pin className="w-2.5 h-2.5 rotate-45 shrink-0" />
+                  <span>Pinned message</span>
+                </div>
+              )}
+
+              {/* Forwarded Indicator Badge */}
+              {message.isForwarded && (
+                <div
+                  className={`flex items-center gap-1 mb-1 text-[11px] font-semibold italic ${
+                    isOwn ? 'text-white/80' : 'text-[var(--color-secondary-text)]'
+                  }`}
+                >
+                  <Forward className="w-3 h-3 shrink-0 not-italic" />
+                  <span>Forwarded</span>
+                  {message.forwardedFromSenderName && (
+                    <span className="not-italic font-normal opacity-90 truncate max-w-[160px] sm:max-w-[220px]">
+                      from {message.forwardedFromSenderName}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Quoted Reply Preview Banner (Clickable to jump) */}
+              {(message.replySnapshot || message.replyToMessageId) && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleJumpToOriginal();
+                  }}
+                  className={`mb-2 p-2 rounded-xl text-left transition-all cursor-pointer select-none group/reply ${
+                    isOwn
+                      ? 'bg-black/20 hover:bg-black/30 text-white border-l-4 border-l-white/80'
+                      : 'bg-[var(--color-secondary-bg)] hover:bg-[var(--color-borders)]/50 text-[var(--color-main-text)] border border-[var(--color-borders)] border-l-4 border-l-[var(--color-primary-action)]'
+                  }`}
+                  title="Click to jump to original message"
+                  aria-label="Click to jump to original message"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleJumpToOriginal();
+                    }
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <Reply className={`w-3 h-3 shrink-0 ${isOwn ? 'text-white/80' : 'text-[var(--color-primary-action)]'}`} />
+                    <span
+                      className={`text-[11px] font-bold truncate max-w-[170px] sm:max-w-xs ${
+                        isOwn ? 'text-white' : 'text-[var(--color-primary-action)]'
+                      }`}
+                    >
+                      {message.replySnapshot?.senderName || 'Original message'}
+                    </span>
+                    {message.replySnapshot?.senderRole && (
+                      <span className="text-[9px] uppercase tracking-wider font-semibold opacity-75">
+                        ({message.replySnapshot.senderRole})
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className={`text-xs truncate max-w-[200px] sm:max-w-sm ${
+                      isOwn ? 'text-white/80' : 'text-[var(--color-secondary-text)]'
+                    }`}
+                  >
+                    {message.replySnapshot?.isDeleted ? (
+                      <span className="italic flex items-center gap-1 opacity-75">
+                        <Ban className="w-3 h-3 shrink-0 inline" />
+                        Original message was deleted
+                      </span>
+                    ) : message.replySnapshot?.text ? (
+                      message.replySnapshot.text
+                    ) : message.replySnapshot?.hasAttachment ? (
+                      message.replySnapshot.attachmentType === 'document' ? (
+                        `📄 ${message.replySnapshot.originalName || 'Document'}`
+                      ) : (
+                        '📷 Image'
+                      )
+                    ) : (
+                      'View message'
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* Jump Error Notification if original cannot be reached */}
+              {jumpError && (
+                <div className="mb-2 px-2 py-1 text-[10px] text-amber-200 bg-amber-500/20 border border-amber-500/30 rounded-lg flex items-center gap-1 animate-fade-in">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{jumpError}</span>
+                </div>
+              )}
+
+              {/* Pin Error Notification if pin/unpin failed */}
+              {pinError && (
+                <div className="mb-2 px-2 py-1 text-[10px] text-red-200 bg-red-500/20 border border-red-500/30 rounded-lg flex items-center gap-1 animate-fade-in">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{pinError}</span>
+                </div>
+              )}
+
               {/* Attachment if present and not deleted */}
               {attachment && attachment.url && (
                 <>
@@ -644,6 +836,63 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
                 : 'opacity-70 sm:opacity-0 group-hover:opacity-100 focus-within:opacity-100'
             }`}
           >
+            {/* Reply action button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (setReplyingTo) {
+                  setReplyingTo(message);
+                }
+              }}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-[var(--color-secondary-text)] hover:text-[var(--color-primary-action)] hover:bg-[var(--color-primary-action)]/10 transition-colors cursor-pointer"
+              title="Reply to message"
+              aria-label="Reply to message"
+            >
+              <Reply className="w-3 h-3" />
+            </button>
+
+            {/* Forward action button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (setForwardingMessage) {
+                  setForwardingMessage(message);
+                }
+              }}
+              className="w-6 h-6 rounded-full flex items-center justify-center text-[var(--color-secondary-text)] hover:text-[var(--color-primary-action)] hover:bg-[var(--color-primary-action)]/10 transition-colors cursor-pointer"
+              title="Forward message"
+              aria-label="Forward message"
+            >
+              <Forward className="w-3 h-3" />
+            </button>
+
+            {/* Pin / Unpin action button */}
+            <button
+              type="button"
+              disabled={isPinning}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleTogglePin();
+              }}
+              className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors cursor-pointer ${
+                isPinned
+                  ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20'
+                  : 'text-[var(--color-secondary-text)] hover:text-amber-500 hover:bg-amber-500/10'
+              }`}
+              title={isPinned ? 'Unpin message' : 'Pin message'}
+              aria-label={isPinned ? 'Unpin message' : 'Pin message'}
+            >
+              {isPinning ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : isPinned ? (
+                <PinOff className="w-3 h-3" />
+              ) : (
+                <Pin className="w-3 h-3" />
+              )}
+            </button>
+
             {/* Reaction button */}
             <button
               type="button"

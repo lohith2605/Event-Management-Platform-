@@ -37,17 +37,41 @@ export const createOrGetConversationApi = async ({ eventId, type, attendeeId }) 
   return handleResponse(response);
 };
 
-export const fetchMessagesApi = async (conversationId, { limit = 50, before } = {}) => {
+export const fetchMessagesApi = async (
+  conversationId,
+  { limit = 50, before, includeMessageId } = {}
+) => {
   let url = `/api/chat/conversations/${conversationId}/messages?limit=${encodeURIComponent(limit)}`;
   if (before) {
     const beforeIso = before instanceof Date ? before.toISOString() : before;
     url += `&before=${encodeURIComponent(beforeIso)}`;
+  }
+  if (includeMessageId) {
+    url += `&includeMessageId=${encodeURIComponent(includeMessageId)}`;
   }
 
   const response = await fetch(url, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
+  });
+  return handleResponse(response);
+};
+
+export const searchMessagesApi = async (
+  conversationId,
+  { query, page = 1, limit = 20 } = {},
+  signal
+) => {
+  const url = `/api/chat/conversations/${conversationId}/messages/search?q=${encodeURIComponent(
+    query
+  )}&page=${encodeURIComponent(page)}&limit=${encodeURIComponent(limit)}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    signal,
   });
   return handleResponse(response);
 };
@@ -59,6 +83,16 @@ export const sendMessageApi = async (conversationId, payload) => {
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify(body),
+  });
+  return handleResponse(response);
+};
+
+export const forwardMessageApi = async (targetConversationId, sourceMessageId) => {
+  const response = await fetch(`/api/chat/conversations/${targetConversationId}/messages/forward`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ sourceMessageId }),
   });
   return handleResponse(response);
 };
@@ -168,6 +202,61 @@ export const deleteMessageApi = async (conversationId, messageId) => {
       credentials: 'include',
     }
   );
+  return handleResponse(response);
+};
+
+export const pinMessageApi = async (conversationId, messageId) => {
+  const response = await fetch(
+    `/api/chat/conversations/${conversationId}/messages/${messageId}/pin`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ messageId }),
+    }
+  );
+  return handleResponse(response);
+};
+
+export const unpinMessageApi = async (conversationId, messageId) => {
+  const url = messageId
+    ? `/api/chat/conversations/${conversationId}/messages/${messageId}/pin`
+    : `/api/chat/conversations/${conversationId}/pin`;
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ messageId }),
+  });
+  return handleResponse(response);
+};
+
+export const fetchSharedContentApi = async (
+  conversationId,
+  { type = 'media', page = 1, limit = 30 } = {}
+) => {
+  const query = new URLSearchParams({
+    type,
+    page: String(page),
+    limit: String(limit),
+  });
+  const response = await fetch(
+    `/api/chat/conversations/${conversationId}/shared?${query.toString()}`,
+    {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    }
+  );
+  return handleResponse(response);
+};
+
+export const deleteConversationApi = async (conversationId) => {
+  const response = await fetch(`/api/chat/conversations/${conversationId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  });
   return handleResponse(response);
 };
 

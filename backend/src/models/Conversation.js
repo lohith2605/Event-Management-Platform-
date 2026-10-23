@@ -68,6 +68,81 @@ const ConversationSchema = new mongoose.Schema(
       of: Number,
       default: {},
     },
+    // Pinned message metadata for this conversation (one pinned message at a time)
+    pinnedMessage: {
+      type: new mongoose.Schema(
+        {
+          messageId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Message',
+            required: true,
+          },
+          text: {
+            type: String,
+            default: '',
+            trim: true,
+          },
+          senderId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
+          },
+          senderName: {
+            type: String,
+            default: '',
+            trim: true,
+          },
+          senderRole: {
+            type: String,
+            default: '',
+            trim: true,
+          },
+          hasAttachment: {
+            type: Boolean,
+            default: false,
+          },
+          attachmentType: {
+            type: String,
+            default: null,
+          },
+          originalName: {
+            type: String,
+            default: '',
+            trim: true,
+          },
+          pinnedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            default: null,
+          },
+          pinnedByName: {
+            type: String,
+            default: '',
+            trim: true,
+          },
+          pinnedAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
+    // Tracks per-user soft-deletion / inbox hiding with deletion timestamp
+    deletedFor: [
+      {
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        deletedAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,
@@ -96,5 +171,6 @@ ConversationSchema.index(
 // Unified lookup indexes
 ConversationSchema.index({ participants: 1, updatedAt: -1 });
 ConversationSchema.index({ eventId: 1, updatedAt: -1 });
+ConversationSchema.index({ 'deletedFor.userId': 1 });
 
 export default mongoose.model('Conversation', ConversationSchema);

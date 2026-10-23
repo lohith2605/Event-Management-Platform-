@@ -4,7 +4,7 @@ import Session from '../models/Session.js';
 
 export const DEFAULT_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 export const DEFAULT_ABSOLUTE_LIFETIME_MS = 8 * 60 * 60 * 1000; // 8 hours
-export const DEFAULT_WARNING_BEFORE_EXPIRY_MS = 2 * 60 * 1000; // 2 minutes
+export const DEFAULT_WARNING_BEFORE_EXPIRY_MS = 5 * 60 * 1000; // 2 minutes
 
 
 export const getInactivityTimeoutMs = () => {

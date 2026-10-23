@@ -74,6 +74,55 @@ const AttachmentSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const ReplySnapshotSchema = new mongoose.Schema(
+  {
+    messageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message',
+      required: true,
+    },
+    senderId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    senderName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    senderRole: {
+      type: String,
+      enum: ['attendee', 'organizer', 'admin'],
+      default: 'attendee',
+    },
+    text: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    hasAttachment: {
+      type: Boolean,
+      default: false,
+    },
+    attachmentType: {
+      type: String,
+      enum: ['image', 'document', null],
+      default: null,
+    },
+    originalName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  { _id: false }
+);
+
 const MessageSchema = new mongoose.Schema(
   {
     conversationId: {
@@ -97,6 +146,36 @@ const MessageSchema = new mongoose.Schema(
       type: String,
       enum: ['attendee', 'organizer', 'admin'],
       required: [true, 'Sender role is required'],
+    },
+    replyToMessageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message',
+      default: null,
+      index: true,
+    },
+    replySnapshot: {
+      type: ReplySnapshotSchema,
+      default: null,
+    },
+    isForwarded: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    forwardedFromMessageId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Message',
+      default: null,
+    },
+    forwardedFromSenderName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    isPinned: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
     text: {
       type: String,
@@ -161,8 +240,10 @@ const MessageSchema = new mongoose.Schema(
   }
 );
 
-// High performance compound indexes for chronological chat queries and read tracking
+// High performance compound indexes for chronological chat queries, search and read tracking
 MessageSchema.index({ conversationId: 1, createdAt: 1 });
 MessageSchema.index({ conversationId: 1, 'readBy.userId': 1 });
+MessageSchema.index({ conversationId: 1, isDeleted: 1, createdAt: -1 });
+MessageSchema.index({ conversationId: 1, replyToMessageId: 1 });
 
 export default mongoose.model('Message', MessageSchema);

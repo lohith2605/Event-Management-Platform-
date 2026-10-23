@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Paperclip, X, AlertCircle, FileText, FileSpreadsheet } from 'lucide-react';
+import { Send, Loader2, Paperclip, X, AlertCircle, FileText, FileSpreadsheet, Reply } from 'lucide-react';
+import { useChat } from '../../context/ChatContext';
 
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_DOCUMENT_SIZE = 15 * 1024 * 1024; // 15MB
@@ -73,7 +74,20 @@ export default function MessageComposer({
   onTyping,
   disabled = false,
   sending = false,
+  replyingTo: propReplyingTo,
+  onCancelReply,
 }) {
+  const { replyingTo: contextReplyingTo, setReplyingTo } = useChat();
+  const activeReplyingTo = propReplyingTo !== undefined ? propReplyingTo : contextReplyingTo;
+
+  const handleCancelReply = () => {
+    if (onCancelReply) {
+      onCancelReply();
+    } else if (setReplyingTo) {
+      setReplyingTo(null);
+    }
+  };
+
   const [text, setText] = useState('');
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -211,15 +225,18 @@ export default function MessageComposer({
     }
 
     try {
-      const payload = selectedFile
-        ? { text: trimmed, file: selectedFile }
-        : trimmed;
+      const payload = {
+        text: trimmed,
+        ...(selectedFile ? { file: selectedFile } : {}),
+        ...(activeReplyingTo?._id ? { replyToMessageId: activeReplyingTo._id } : {}),
+      };
 
       const res = await onSendMessage(payload);
       if (res && res.success) {
-        // Success: clear text and attachment preview
+        // Success: clear text, attachment preview, and reply state
         setText('');
         handleRemoveFile();
+        handleCancelReply();
         if (textareaRef.current) {
           textareaRef.current.style.height = 'auto';
         }
@@ -259,6 +276,50 @@ export default function MessageComposer({
             onClick={() => setUploadError('')}
             className="text-red-500 hover:opacity-75 cursor-pointer shrink-0"
             aria-label="Dismiss error"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Quoted Message Reply Preview Banner */}
+      {activeReplyingTo && (
+        <div className="mb-2.5 p-2 sm:px-3 sm:py-2 rounded-2xl bg-[var(--color-primary-action)]/10 border-l-4 border-l-[var(--color-primary-action)] border border-[var(--color-borders)] flex items-center justify-between gap-3 animate-fade-in shadow-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-xl bg-[var(--color-primary-action)]/15 text-[var(--color-primary-action)] flex items-center justify-center shrink-0">
+              <Reply className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-[var(--color-primary-action)] truncate">
+                  Replying to {activeReplyingTo.senderName || 'Participant'}
+                </span>
+                {activeReplyingTo.senderRole && (
+                  <span className="text-[9px] uppercase tracking-wider text-[var(--color-secondary-text)] font-semibold">
+                    ({activeReplyingTo.senderRole})
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--color-main-text)]/90 truncate max-w-[200px] sm:max-w-md mt-0.5">
+                {activeReplyingTo.isDeleted
+                  ? 'This message was deleted'
+                  : activeReplyingTo.text
+                  ? activeReplyingTo.text
+                  : (activeReplyingTo.attachment?.originalName || activeReplyingTo.attachments?.[0]?.originalName)
+                  ? `📄 ${activeReplyingTo.attachment?.originalName || activeReplyingTo.attachments?.[0]?.originalName}`
+                  : (activeReplyingTo.attachment?.url || activeReplyingTo.attachments?.[0]?.url)
+                  ? '📷 Image'
+                  : 'Attachment'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCancelReply}
+            disabled={isSending}
+            className="w-6 h-6 rounded-full flex items-center justify-center text-[var(--color-secondary-text)] hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer shrink-0"
+            title="Cancel reply (keeps typed message)"
+            aria-label="Cancel reply"
           >
             <X className="w-3.5 h-3.5" />
           </button>

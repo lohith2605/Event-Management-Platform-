@@ -5,6 +5,12 @@ import Event from '../models/Event.js';
 import {
   verifyConversationAccess,
   findOrCreateConversation,
+  buildReplySnapshot,
+  executeForwardMessage,
+  executePinMessage,
+  executeUnpinMessage,
+  executeDeleteConversation,
+  restoreConversationVisibility,
 } from '../services/chatService.js';
 import {
   emitToConversation,
@@ -25,17 +31,20 @@ import {
 export const getUserConversations = async (req, res, next) => {
   try {
     const user = req.user;
-    let query = {};
+    let query = {
+      'deletedFor.userId': { $ne: user._id },
+    };
 
     if (user.role === 'admin') {
       // Platform Admins can view all admin_organizer conversations
-      query = { type: 'admin_organizer' };
+      query.type = 'admin_organizer';
     } else if (user.role === 'organizer') {
       // Organizers view conversations where they are the event organizer
-      query = { organizerId: user._id };
+      query.organizerId = user._id;
     } else {
       // Attendees view conversations where they are the registered attendee
-      query = { attendeeId: user._id, type: 'attendee_organizer' };
+      query.attendeeId = user._id;
+      query.type = 'attendee_organizer';
     }
 
     const conversations = await Conversation.find(query)
@@ -96,6 +105,19 @@ export const getConversationById = async (req, res, next) => {
         success: false,
         message: 'Conversation not found.',
       });
+    }
+
+    // Check if conversation has been hidden/deleted by the requesting user
+    if (conversation.deletedFor && Array.isArray(conversation.deletedFor)) {
+      const isHidden = conversation.deletedFor.some(
+        (d) => d && d.userId && d.userId.toString() === req.user._id.toString()
+      );
+      if (isHidden) {
+        return res.status(404).json({
+          success: false,
+          message: 'Conversation not found.',
+        });
+      }
     }
 
     // Server-side access & eligibility verification
@@ -170,7 +192,7 @@ export const createOrGetConversation = async (req, res, next) => {
 export const getConversationMessages = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { limit = 50, before } = req.query;
+    const { limit = 50, before, includeMessageId } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -204,7 +226,29 @@ export const getConversationMessages = async (req, res, next) => {
       }
     }
 
-    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+    let parsedLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+
+    // If an includeMessageId is specified (e.g. jumping to a matching search result),
+    // calculate the count needed to encompass the target message in this fetch
+    if (includeMessageId && mongoose.Types.ObjectId.isValid(includeMessageId)) {
+      const targetMsg = await Message.findOne({
+        _id: includeMessageId,
+        conversationId: conversation._id,
+      }).lean();
+
+      if (targetMsg && targetMsg.createdAt) {
+        const countQuery = {
+          conversationId: conversation._id,
+          createdAt: { $gte: targetMsg.createdAt },
+        };
+        if (query.createdAt && query.createdAt.$lt) {
+          countQuery.createdAt.$lt = query.createdAt.$lt;
+        }
+        const countToTarget = await Message.countDocuments(countQuery);
+        // Include target message plus a small buffer of older messages (up to max 250)
+        parsedLimit = Math.min(250, Math.max(parsedLimit, countToTarget + 10));
+      }
+    }
 
     // Fetch messages in chronological order (or reverse for pagination)
     const rawMessages = await Message.find(query)
@@ -239,6 +283,328 @@ export const getConversationMessages = async (req, res, next) => {
 };
 
 /**
+ * @desc    Search full message history within an authorized conversation
+ * @route   GET /api/chat/conversations/:id/messages/search?q=<query>&page=1&limit=20
+ * @access  Private
+ */
+export const searchConversationMessages = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { q, page = 1, limit = 20 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation ID format.',
+      });
+    }
+
+    if (typeof q !== 'string' || !q.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required and cannot be empty.',
+      });
+    }
+
+    const queryStr = q.trim();
+    if (queryStr.length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query cannot exceed 100 characters.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check (verifies publication status, roles, bookings)
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    // Safely escape regex characters to prevent regex injection or ReDoS
+    const escapedQuery = queryStr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedQuery, 'i');
+
+    // Strictly isolate query to this conversation, exclude deleted messages
+    const filter = {
+      conversationId: conversation._id,
+      isDeleted: { $ne: true },
+      text: { $regex: regex },
+    };
+
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    // Execute count and paginated query in parallel
+    const [totalCount, rawMatches] = await Promise.all([
+      Message.countDocuments(filter),
+      Message.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parsedLimit)
+        .select('_id conversationId senderId senderName senderRole text createdAt isEdited editedAt')
+        .lean(),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / parsedLimit) || 1;
+    const hasMore = parsedPage < totalPages;
+
+    res.status(200).json({
+      success: true,
+      query: queryStr,
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        totalCount,
+        totalPages,
+        hasMore,
+      },
+      count: rawMatches.length,
+      messages: rawMatches,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get shared content (media, documents, links) within an authorized conversation
+ * @route   GET /api/chat/conversations/:id/shared?type=media&page=1&limit=30
+ * @access  Private
+ */
+export const getSharedContent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { type = 'media', page = 1, limit = 30 } = req.query;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid conversation ID format.',
+      });
+    }
+
+    const conversation = await Conversation.findById(id);
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // Access authorization check (verifies publication status, roles, bookings)
+    const access = await verifyConversationAccess(req.user, conversation);
+    if (!access.allowed) {
+      return res.status(access.status || 403).json({
+        success: false,
+        message: access.message || 'Access denied.',
+      });
+    }
+
+    const contentType = (type || 'media').toLowerCase().trim();
+    if (!['media', 'documents', 'links'].includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid content type. Supported types: media, documents, links.',
+      });
+    }
+
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.min(50, Math.max(1, parseInt(limit, 10) || 30));
+    const skip = (parsedPage - 1) * parsedLimit;
+
+    let items = [];
+    let totalCount = 0;
+
+    if (contentType === 'media') {
+      const filter = {
+        conversationId: conversation._id,
+        isDeleted: { $ne: true },
+        $or: [
+          { 'attachment.url': { $exists: true, $ne: '' }, 'attachment.resourceType': 'image' },
+          { 'attachment.url': { $exists: true, $ne: '' }, 'attachment.mimeType': /^image\//i },
+          { 'attachments.url': { $exists: true, $ne: '' }, 'attachments.resourceType': 'image' },
+          { 'attachments.url': { $exists: true, $ne: '' }, 'attachments.mimeType': /^image\//i },
+        ],
+      };
+
+      const [count, rawMessages] = await Promise.all([
+        Message.countDocuments(filter),
+        Message.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parsedLimit)
+          .select('_id conversationId senderId senderName senderRole text attachment attachments createdAt')
+          .lean(),
+      ]);
+
+      totalCount = count;
+      items = rawMessages
+        .map((m) => {
+          const att = m.attachment || (Array.isArray(m.attachments) ? m.attachments[0] : null);
+          if (!att || !att.url) return null;
+          return {
+            _id: m._id,
+            messageId: m._id,
+            type: 'media',
+            senderId: m.senderId,
+            senderName: m.senderName,
+            senderRole: m.senderRole,
+            createdAt: m.createdAt,
+            text: m.text || '',
+            attachment: {
+              url: att.url,
+              publicId: att.publicId,
+              originalName: att.originalName || 'Image',
+              mimeType: att.mimeType || 'image/jpeg',
+              size: att.size || 0,
+              resourceType: 'image',
+              width: att.width || null,
+              height: att.height || null,
+            },
+          };
+        })
+        .filter(Boolean);
+    } else if (contentType === 'documents') {
+      const filter = {
+        conversationId: conversation._id,
+        isDeleted: { $ne: true },
+        $or: [
+          {
+            'attachment.url': { $exists: true, $ne: '' },
+            'attachment.resourceType': { $ne: 'image' },
+            'attachment.mimeType': { $not: /^image\//i },
+          },
+          {
+            'attachments.url': { $exists: true, $ne: '' },
+            'attachments.resourceType': { $ne: 'image' },
+            'attachments.mimeType': { $not: /^image\//i },
+          },
+        ],
+      };
+
+      const [count, rawMessages] = await Promise.all([
+        Message.countDocuments(filter),
+        Message.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parsedLimit)
+          .select('_id conversationId senderId senderName senderRole text attachment attachments createdAt')
+          .lean(),
+      ]);
+
+      totalCount = count;
+      items = rawMessages
+        .map((m) => {
+          const doc = m.attachment || (Array.isArray(m.attachments) ? m.attachments[0] : null);
+          if (!doc || !doc.url) return null;
+          return {
+            _id: m._id,
+            messageId: m._id,
+            type: 'document',
+            senderId: m.senderId,
+            senderName: m.senderName,
+            senderRole: m.senderRole,
+            createdAt: m.createdAt,
+            text: m.text || '',
+            attachment: {
+              url: doc.url,
+              publicId: doc.publicId,
+              originalName: doc.originalName || 'Document',
+              mimeType: doc.mimeType || 'application/octet-stream',
+              size: doc.size || 0,
+              resourceType: doc.resourceType || 'raw',
+            },
+          };
+        })
+        .filter(Boolean);
+    } else if (contentType === 'links') {
+      const filter = {
+        conversationId: conversation._id,
+        isDeleted: { $ne: true },
+        text: { $regex: /https?:\/\/[^\s]+/i },
+      };
+
+      const [count, rawMessages] = await Promise.all([
+        Message.countDocuments(filter),
+        Message.find(filter)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parsedLimit)
+          .select('_id conversationId senderId senderName senderRole text createdAt')
+          .lean(),
+      ]);
+
+      totalCount = count;
+      const extractedLinks = [];
+      rawMessages.forEach((m) => {
+        const text = m.text || '';
+        const urlRegex = /https?:\/\/[^\s<>"]+/gi;
+        const matches = text.match(urlRegex) || [];
+        const seenUrls = new Set();
+        matches.forEach((rawUrl) => {
+          try {
+            const cleaned = rawUrl.replace(/[.,;:)]+$/, '');
+            const parsed = new URL(cleaned);
+            if (
+              (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+              !seenUrls.has(cleaned)
+            ) {
+              seenUrls.add(cleaned);
+              extractedLinks.push({
+                _id: `${m._id}_link_${extractedLinks.length}`,
+                messageId: m._id,
+                type: 'link',
+                url: cleaned,
+                domain: parsed.hostname.replace(/^www\./, ''),
+                senderId: m.senderId,
+                senderName: m.senderName,
+                senderRole: m.senderRole,
+                createdAt: m.createdAt,
+                textSnippet: text.length > 250 ? `${text.slice(0, 250)}...` : text,
+              });
+            }
+          } catch {
+            // Ignore malformed URL
+          }
+        });
+      });
+      items = extractedLinks;
+    }
+
+    const totalPages = Math.ceil(totalCount / parsedLimit) || 1;
+    const hasMore = parsedPage < totalPages;
+
+    res.status(200).json({
+      success: true,
+      type: contentType,
+      pagination: {
+        page: parsedPage,
+        limit: parsedLimit,
+        totalCount,
+        totalPages,
+        hasMore,
+      },
+      count: items.length,
+      items,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Send a message within an authorized conversation
  * @route   POST /api/chat/conversations/:id/messages
  * @access  Private
@@ -246,7 +612,7 @@ export const getConversationMessages = async (req, res, next) => {
 export const sendMessage = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { text, attachment, attachments } = req.body;
+    const { text, attachment, attachments, replyToMessageId } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -308,12 +674,41 @@ export const sendMessage = async (req, res, next) => {
       });
     }
 
+    // Validate reply reference if specified (prevents cross-conversation or non-existent references)
+    let replySnapshot = null;
+    let validatedReplyId = null;
+    if (replyToMessageId) {
+      if (!mongoose.Types.ObjectId.isValid(replyToMessageId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid reply message ID format.',
+        });
+      }
+
+      const originalMessage = await Message.findOne({
+        _id: replyToMessageId,
+        conversationId: conversation._id,
+      });
+
+      if (!originalMessage) {
+        return res.status(400).json({
+          success: false,
+          message: 'Referenced reply message not found in this conversation.',
+        });
+      }
+
+      validatedReplyId = originalMessage._id;
+      replySnapshot = buildReplySnapshot(originalMessage);
+    }
+
     // Create message with verified sender identity derived strictly from authenticated user
     const message = await Message.create({
       conversationId: conversation._id,
       senderId: req.user._id,
       senderName: req.user.name,
       senderRole: req.user.role,
+      replyToMessageId: validatedReplyId,
+      replySnapshot,
       text: trimmedText,
       attachments: cleanAttachments,
       attachment: cleanAttachments[0] || null,
@@ -373,6 +768,21 @@ export const sendMessage = async (req, res, next) => {
     conversation.unreadCounts = unreadMap;
     await conversation.save();
 
+    // Restore visibility for sender and target recipients if previously hidden
+    const restoreUserIds = [req.user._id];
+    if (conversation.type === 'admin_organizer') {
+      if (req.user.role === 'admin') {
+        restoreUserIds.push(conversation.organizerId);
+      }
+    } else if (conversation.type === 'attendee_organizer') {
+      if (senderIdStr === conversation.organizerId.toString()) {
+        restoreUserIds.push(conversation.attendeeId);
+      } else {
+        restoreUserIds.push(conversation.organizerId);
+      }
+    }
+    await restoreConversationVisibility(conversation._id, restoreUserIds);
+
     // Broadcast in real time via Socket.IO
     emitToConversation(conversation._id, 'new_message', {
       conversationId: conversation._id,
@@ -392,6 +802,57 @@ export const sendMessage = async (req, res, next) => {
         emitToUser(rId, 'chat_notification', {
           conversationId: conversation._id,
           eventId: conversation.eventId,
+          senderName: req.user.name,
+          text: previewText,
+        });
+      }
+    });
+
+    res.status(201).json({
+      success: true,
+      message,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Forward a verified message into an authorized destination conversation
+ * @route   POST /api/chat/conversations/:id/messages/forward
+ * @access  Private
+ */
+export const forwardMessage = async (req, res, next) => {
+  try {
+    const targetConversationId = req.params.id || req.body.targetConversationId;
+    const { sourceMessageId } = req.body;
+
+    const { message, targetConversation, recipientIds, previewText } =
+      await executeForwardMessage({
+        user: req.user,
+        sourceMessageId,
+        targetConversationId,
+      });
+
+    // Broadcast in real time to the destination conversation room
+    emitToConversation(targetConversation._id, 'new_message', {
+      conversationId: targetConversation._id,
+      message,
+    });
+
+    // Notify individual recipient private rooms
+    recipientIds.forEach((rId) => {
+      if (rId === 'admin') {
+        emitToRole('admin', 'chat_notification', {
+          conversationId: targetConversation._id,
+          eventId: targetConversation.eventId,
+          senderName: req.user.name,
+          text: previewText,
+        });
+      } else {
+        emitToUser(rId, 'chat_notification', {
+          conversationId: targetConversation._id,
+          eventId: targetConversation.eventId,
           senderName: req.user.name,
           text: previewText,
         });
@@ -500,7 +961,9 @@ export const markConversationRead = async (req, res, next) => {
 export const getUnreadCount = async (req, res, next) => {
   try {
     const user = req.user;
-    let query = {};
+    let query = {
+      'deletedFor.userId': { $ne: user._id },
+    };
 
     if (user.role === 'admin') {
       query = { type: 'admin_organizer' };
@@ -762,6 +1225,20 @@ export const editMessage = async (req, res, next) => {
       await conversation.save();
     }
 
+    // If this message was pinned, keep the pinned preview synchronized
+    if (
+      conversation.pinnedMessage &&
+      conversation.pinnedMessage.messageId &&
+      conversation.pinnedMessage.messageId.toString() === message._id.toString()
+    ) {
+      conversation.pinnedMessage.text = trimmed;
+      await conversation.save();
+      emitToConversation(conversation._id, 'message_pinned', {
+        conversationId: conversation._id,
+        pinnedMessage: conversation.pinnedMessage,
+      });
+    }
+
     // Broadcast to authorized participants in room
     emitToConversation(conversation._id, 'message_edited', {
       conversationId: conversation._id,
@@ -843,6 +1320,20 @@ export const deleteMessage = async (req, res, next) => {
     message.attachment = null;
     await message.save();
 
+    // Cascade update to any replies in this conversation quoting this deleted message
+    await Message.updateMany(
+      { conversationId: conversation._id, replyToMessageId: message._id },
+      {
+        $set: {
+          'replySnapshot.isDeleted': true,
+          'replySnapshot.text': 'This message was deleted',
+          'replySnapshot.hasAttachment': false,
+          'replySnapshot.attachmentType': null,
+          'replySnapshot.originalName': '',
+        },
+      }
+    );
+
     // If this was the last message, update conversation preview
     if (
       conversation.lastMessage &&
@@ -851,6 +1342,21 @@ export const deleteMessage = async (req, res, next) => {
     ) {
       conversation.lastMessage.text = 'This message was deleted';
       await conversation.save();
+    }
+
+    // If this message was pinned, clear the pin safely
+    if (
+      conversation.pinnedMessage &&
+      conversation.pinnedMessage.messageId &&
+      conversation.pinnedMessage.messageId.toString() === message._id.toString()
+    ) {
+      conversation.pinnedMessage = null;
+      conversation.markModified('pinnedMessage');
+      await conversation.save();
+      emitToConversation(conversation._id, 'message_unpinned', {
+        conversationId: conversation._id,
+        unpinnedMessageId: message._id,
+      });
     }
 
     // Broadcast message_deleted to conversation room
@@ -997,6 +1503,105 @@ export const downloadAttachment = async (req, res, next) => {
       filename: attachment.originalName || 'attachment',
       mimeType: attachment.mimeType || 'application/octet-stream',
       isInline,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Pin a message in an authorized conversation
+ * @route   POST /api/chat/conversations/:id/messages/:messageId/pin
+ * @route   POST /api/chat/conversations/:id/pin
+ * @access  Private
+ */
+export const pinMessage = async (req, res, next) => {
+  try {
+    const conversationId = req.params.id;
+    const messageId = req.params.messageId || req.body.messageId;
+
+    const { conversation, message, pinnedMessage } = await executePinMessage({
+      user: req.user,
+      conversationId,
+      messageId,
+    });
+
+    // Broadcast in real-time to the conversation room
+    emitToConversation(conversation._id, 'message_pinned', {
+      conversationId: conversation._id,
+      pinnedMessage,
+    });
+
+    res.status(200).json({
+      success: true,
+      conversationId: conversation._id,
+      pinnedMessage,
+      message,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Unpin the currently pinned message in an authorized conversation
+ * @route   DELETE /api/chat/conversations/:id/messages/:messageId/pin
+ * @route   DELETE /api/chat/conversations/:id/pin
+ * @route   POST /api/chat/conversations/:id/unpin
+ * @access  Private
+ */
+export const unpinMessage = async (req, res, next) => {
+  try {
+    const conversationId = req.params.id;
+    const messageId = req.params.messageId || req.body.messageId;
+
+    const { conversation, unpinnedMessageId, alreadyUnpinned } = await executeUnpinMessage({
+      user: req.user,
+      conversationId,
+      messageId,
+    });
+
+    // Broadcast in real-time to the conversation room
+    emitToConversation(conversation._id, 'message_unpinned', {
+      conversationId: conversation._id,
+      unpinnedMessageId,
+    });
+
+    res.status(200).json({
+      success: true,
+      conversationId: conversation._id,
+      unpinnedMessageId,
+      alreadyUnpinned: Boolean(alreadyUnpinned),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Delete / hide a conversation for the authenticated user only
+ * @route   DELETE /api/chat/conversations/:id
+ * @access  Private
+ */
+export const deleteConversation = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const result = await executeDeleteConversation({
+      user: req.user,
+      conversationId: id,
+    });
+
+    // Scoped Socket.IO notification to requester's private user room only
+    emitToUser(req.user._id.toString(), 'conversation_deleted', {
+      conversationId: result.conversation._id.toString(),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Conversation deleted from your inbox.',
+      conversationId: result.conversation._id.toString(),
+      wasAlreadyDeleted: result.wasAlreadyDeleted,
     });
   } catch (error) {
     next(error);

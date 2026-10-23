@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MessageSquare, RefreshCw, AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { useChat } from '../context/ChatContext';
@@ -7,10 +7,13 @@ import ConversationList from '../components/chat/ConversationList';
 import ConversationHeader from '../components/chat/ConversationHeader';
 import MessageTimeline from '../components/chat/MessageTimeline';
 import MessageComposer from '../components/chat/MessageComposer';
+import MessageSearchPanel from '../components/chat/MessageSearchPanel';
+import SharedContentPanel from '../components/chat/SharedContentPanel';
 
 export default function MessagesPage() {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const convIdFromUrl = searchParams.get('c');
   const handledConvIdRef = useRef(null);
 
@@ -34,6 +37,9 @@ export default function MessagesPage() {
     setIsChatDrawerOpen,
     sendingMessage,
     otherParticipantId,
+    isSharedOpen,
+    setIsSharedOpen,
+    sharedInitialTab,
   } = useChat();
 
   // Close the quick-access slide-over drawer when entering the dedicated Messages page
@@ -89,6 +95,7 @@ export default function MessagesPage() {
   const handleSelectConversation = useCallback(
     (conv) => {
       if (!conv?._id) return;
+      setIsSearchOpen(false);
       const convId = conv._id.toString();
       handledConvIdRef.current = convId;
       prevConvIdFromUrlRef.current = convId;
@@ -100,6 +107,7 @@ export default function MessagesPage() {
 
   // Handle back to inbox button (mobile view & resets URL query)
   const handleBackToInbox = useCallback(() => {
+    setIsSearchOpen(false);
     handledConvIdRef.current = null;
     prevConvIdFromUrlRef.current = null;
     setSearchParams({}, { replace: true });
@@ -185,7 +193,22 @@ export default function MessagesPage() {
                   conversation={activeConversation}
                   showBackButton={true}
                   onBack={handleBackToInbox}
+                  onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+                  isSearchOpen={isSearchOpen}
                   isConnected={isConnected}
+                />
+
+                <MessageSearchPanel
+                  conversationId={activeConversation?._id}
+                  isOpen={isSearchOpen}
+                  onClose={() => setIsSearchOpen(false)}
+                />
+
+                <SharedContentPanel
+                  conversationId={activeConversation?._id}
+                  isOpen={isSharedOpen}
+                  onClose={() => setIsSharedOpen(false)}
+                  initialTab={sharedInitialTab}
                 />
 
                 <MessageTimeline

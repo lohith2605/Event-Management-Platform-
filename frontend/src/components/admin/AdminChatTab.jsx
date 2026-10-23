@@ -5,6 +5,8 @@ import ConversationList from '../chat/ConversationList';
 import ConversationHeader from '../chat/ConversationHeader';
 import MessageTimeline from '../chat/MessageTimeline';
 import MessageComposer from '../chat/MessageComposer';
+import MessageSearchPanel from '../chat/MessageSearchPanel';
+import SharedContentPanel from '../chat/SharedContentPanel';
 
 export default function AdminChatTab() {
   const {
@@ -26,7 +28,12 @@ export default function AdminChatTab() {
     isConnected,
     refreshConversations,
     otherParticipantId,
+    isSharedOpen,
+    setIsSharedOpen,
+    sharedInitialTab,
   } = useChat();
+
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Admin view strictly displays admin_organizer conversations
   const adminConversations = conversations.filter((c) => c.type === 'admin_organizer');
@@ -88,8 +95,26 @@ export default function AdminChatTab() {
               <ConversationHeader
                 conversation={activeConversation}
                 showBackButton={true}
-                onBack={leaveConversation}
+                onBack={() => {
+                  setIsSearchOpen(false);
+                  leaveConversation();
+                }}
+                onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+                isSearchOpen={isSearchOpen}
                 isConnected={isConnected}
+              />
+
+              <MessageSearchPanel
+                conversationId={activeConversation?._id}
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+              />
+
+              <SharedContentPanel
+                conversationId={activeConversation?._id}
+                isOpen={isSharedOpen}
+                onClose={() => setIsSharedOpen(false)}
+                initialTab={sharedInitialTab}
               />
 
               <MessageTimeline

@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Conversation from '../models/Conversation.js';
 import Message, { ALLOWED_EMOJIS } from '../models/Message.js';
-import { verifyConversationAccess } from './chatService.js';
+import { verifyConversationAccess, buildReplySnapshot, executeForwardMessage, executePinMessage, executeUnpinMessage, executeDeleteConversation, restoreConversationVisibility } from './chatService.js';
 import logger from '../utils/logger.js';
 
 let ioInstance = null;
@@ -193,7 +193,7 @@ export const initSocket = (httpServer) => {
      */
     socket.on('send_message', async (data, callback) => {
       try {
-        const { conversationId, text, attachment, attachments } = data || {};
+        const { conversationId, text, attachment, attachments, replyToMessageId } = data || {};
 
         if (!conversationId || !mongoose.Types.ObjectId.isValid(conversationId)) {
           const errRes = { success: false, error: 'Invalid conversation ID format.' };
@@ -255,12 +255,41 @@ export const initSocket = (httpServer) => {
           return;
         }
 
+        // Validate reply reference if specified (prevents cross-conversation or non-existent references)
+        let replySnapshot = null;
+        let validatedReplyId = null;
+        if (replyToMessageId) {
+          if (!mongoose.Types.ObjectId.isValid(replyToMessageId)) {
+            const errRes = { success: false, error: 'Invalid reply message ID format.' };
+            if (typeof callback === 'function') callback(errRes);
+            socket.emit('chat_error', errRes);
+            return;
+          }
+
+          const originalMessage = await Message.findOne({
+            _id: replyToMessageId,
+            conversationId: conversation._id,
+          });
+
+          if (!originalMessage) {
+            const errRes = { success: false, error: 'Referenced reply message not found in this conversation.' };
+            if (typeof callback === 'function') callback(errRes);
+            socket.emit('chat_error', errRes);
+            return;
+          }
+
+          validatedReplyId = originalMessage._id;
+          replySnapshot = buildReplySnapshot(originalMessage);
+        }
+
         // Create message strictly using authenticated socket user identity
         const message = await Message.create({
           conversationId: conversation._id,
           senderId: socket.user._id,
           senderName: socket.user.name,
           senderRole: socket.user.role,
+          replyToMessageId: validatedReplyId,
+          replySnapshot,
           text: trimmedText,
           attachments: cleanAttachments,
           attachment: cleanAttachments[0] || null,
@@ -314,6 +343,21 @@ export const initSocket = (httpServer) => {
         conversation.unreadCounts = unreadMap;
         await conversation.save();
 
+        // Restore visibility for sender and target recipients if previously hidden
+        const restoreUserIds = [socket.user._id];
+        if (conversation.type === 'admin_organizer') {
+          if (socket.user.role === 'admin') {
+            restoreUserIds.push(conversation.organizerId);
+          }
+        } else if (conversation.type === 'attendee_organizer') {
+          if (socket.userId === conversation.organizerId.toString()) {
+            restoreUserIds.push(conversation.attendeeId);
+          } else {
+            restoreUserIds.push(conversation.organizerId);
+          }
+        }
+        await restoreConversationVisibility(conversation._id, restoreUserIds);
+
         // Broadcast to conversation room
         emitToConversation(conversation._id, 'new_message', {
           conversationId: conversation._id,
@@ -344,6 +388,109 @@ export const initSocket = (httpServer) => {
       } catch (err) {
         logger.error('Error in send_message socket event:', err);
         const errRes = { success: false, error: 'Internal server error sending message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Forward message via socket with server-side validation & persistence
+     */
+    socket.on('forward_message', async (data, callback) => {
+      try {
+        const { sourceMessageId, targetConversationId } = data || {};
+
+        const { message, targetConversation, recipientIds, previewText } =
+          await executeForwardMessage({
+            user: socket.user,
+            sourceMessageId,
+            targetConversationId,
+          });
+
+        // Broadcast to destination conversation room
+        emitToConversation(targetConversation._id, 'new_message', {
+          conversationId: targetConversation._id,
+          message,
+        });
+
+        // Notify individual recipient private rooms
+        recipientIds.forEach((rId) => {
+          if (rId === 'admin') {
+            emitToRole('admin', 'chat_notification', {
+              conversationId: targetConversation._id,
+              eventId: targetConversation.eventId,
+              senderName: socket.user.name,
+              text: previewText,
+            });
+          } else {
+            emitToUser(rId, 'chat_notification', {
+              conversationId: targetConversation._id,
+              eventId: targetConversation.eventId,
+              senderName: socket.user.name,
+              text: previewText,
+            });
+          }
+        });
+
+        const successRes = { success: true, message };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in forward_message socket event:', err);
+        const errRes = { success: false, error: err.message || 'Failed to forward message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Pin message via socket with server-side validation & persistence
+     */
+    socket.on('pin_message', async (data, callback) => {
+      try {
+        const { conversationId, messageId } = data || {};
+        const { conversation, message, pinnedMessage } = await executePinMessage({
+          user: socket.user,
+          conversationId,
+          messageId,
+        });
+
+        emitToConversation(conversation._id, 'message_pinned', {
+          conversationId: conversation._id,
+          pinnedMessage,
+        });
+
+        const successRes = { success: true, pinnedMessage, message };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in pin_message socket event:', err);
+        const errRes = { success: false, error: err.message || 'Failed to pin message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Unpin message via socket
+     */
+    socket.on('unpin_message', async (data, callback) => {
+      try {
+        const { conversationId, messageId } = data || {};
+        const { conversation, unpinnedMessageId, alreadyUnpinned } = await executeUnpinMessage({
+          user: socket.user,
+          conversationId,
+          messageId,
+        });
+
+        emitToConversation(conversation._id, 'message_unpinned', {
+          conversationId: conversation._id,
+          unpinnedMessageId,
+        });
+
+        const successRes = { success: true, unpinnedMessageId, alreadyUnpinned };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in unpin_message socket event:', err);
+        const errRes = { success: false, error: err.message || 'Failed to unpin message.' };
         if (typeof callback === 'function') callback(errRes);
         socket.emit('chat_error', errRes);
       }
@@ -636,6 +783,20 @@ export const initSocket = (httpServer) => {
           await conversation.save();
         }
 
+        // Keep pinned message preview synchronized
+        if (
+          conversation.pinnedMessage &&
+          conversation.pinnedMessage.messageId &&
+          conversation.pinnedMessage.messageId.toString() === message._id.toString()
+        ) {
+          conversation.pinnedMessage.text = trimmed;
+          await conversation.save();
+          emitToConversation(conversation._id, 'message_pinned', {
+            conversationId: conversation._id,
+            pinnedMessage: conversation.pinnedMessage,
+          });
+        }
+
         emitToConversation(conversation._id, 'message_edited', {
           conversationId: conversation._id,
           message,
@@ -715,6 +876,20 @@ export const initSocket = (httpServer) => {
         message.attachment = null;
         await message.save();
 
+        // Cascade update to any replies in this conversation quoting this deleted message
+        await Message.updateMany(
+          { conversationId: conversation._id, replyToMessageId: message._id },
+          {
+            $set: {
+              'replySnapshot.isDeleted': true,
+              'replySnapshot.text': 'This message was deleted',
+              'replySnapshot.hasAttachment': false,
+              'replySnapshot.attachmentType': null,
+              'replySnapshot.originalName': '',
+            },
+          }
+        );
+
         if (
           conversation.lastMessage &&
           conversation.lastMessage.createdAt &&
@@ -722,6 +897,20 @@ export const initSocket = (httpServer) => {
         ) {
           conversation.lastMessage.text = 'This message was deleted';
           await conversation.save();
+        }
+
+        // If pinned, clear pin safely
+        if (
+          conversation.pinnedMessage &&
+          conversation.pinnedMessage.messageId &&
+          conversation.pinnedMessage.messageId.toString() === message._id.toString()
+        ) {
+          conversation.pinnedMessage = null;
+          await conversation.save();
+          emitToConversation(conversation._id, 'message_unpinned', {
+            conversationId: conversation._id,
+            unpinnedMessageId: message._id,
+          });
         }
 
         emitToConversation(conversation._id, 'message_deleted', {
@@ -735,6 +924,36 @@ export const initSocket = (httpServer) => {
       } catch (err) {
         logger.error('Error in delete_message socket event:', err);
         const errRes = { success: false, error: 'Internal server error deleting message.' };
+        if (typeof callback === 'function') callback(errRes);
+        socket.emit('chat_error', errRes);
+      }
+    });
+
+    /**
+     * Delete / hide a conversation for the authenticated socket user
+     */
+    socket.on('delete_conversation', async (data, callback) => {
+      try {
+        const { conversationId } = data || {};
+        const result = await executeDeleteConversation({
+          user: socket.user,
+          conversationId,
+        });
+
+        // Notify socket user room
+        emitToUser(socket.userId, 'conversation_deleted', {
+          conversationId: result.conversation._id,
+        });
+
+        const successRes = {
+          success: true,
+          conversationId: result.conversation._id,
+          wasAlreadyDeleted: result.wasAlreadyDeleted,
+        };
+        if (typeof callback === 'function') callback(successRes);
+      } catch (err) {
+        logger.error('Error in delete_conversation socket event:', err);
+        const errRes = { success: false, error: err.message || 'Failed to delete conversation.' };
         if (typeof callback === 'function') callback(errRes);
         socket.emit('chat_error', errRes);
       }

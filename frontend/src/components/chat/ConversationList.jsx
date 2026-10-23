@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
-import { Search, MessageSquare, X } from 'lucide-react';
+import { Search, MessageSquare, X, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useChat } from '../../context/ChatContext';
+import DeleteConversationModal from './DeleteConversationModal';
 
 // Helper to safely extract participant name even if unpopulated
 const getParticipantName = (participant, fallback) => {
@@ -36,9 +38,13 @@ export default function ConversationList({
   loading = false,
 }) {
   const { user } = useAuth();
+  const chatContext = useChat();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'admin_organizer' | 'attendee_organizer'
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [convToDelete, setConvToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   const isOrganizer = user?.role === 'organizer';
   const isAdmin = user?.role === 'admin';
@@ -75,6 +81,25 @@ export default function ConversationList({
       return true;
     });
   }, [conversations, typeFilter, unreadOnly, searchQuery]);
+
+  const handleConfirmDelete = async () => {
+    if (isDeleting || !convToDelete?._id) return;
+    try {
+      setIsDeleting(true);
+      setDeleteError(null);
+      const convId = convToDelete._id || convToDelete.id;
+      const res = await chatContext?.deleteConversation?.(convId);
+      if (res && res.error) {
+        setDeleteError(res.error);
+      } else {
+        setConvToDelete(null);
+      }
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete conversation.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-card-bg)]">
@@ -234,81 +259,126 @@ export default function ConversationList({
               : formatRelativeTime(c.updatedAt);
 
             return (
-              <button
+              <div
                 key={c._id}
-                type="button"
-                onClick={() => onSelectConversation(c)}
-                aria-selected={isActive}
-                className={`w-full text-left p-3.5 transition-colors flex items-start gap-3 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary-action)] ${
+                className={`relative group transition-colors ${
                   isActive
                     ? 'bg-[var(--color-primary-action)]/10 border-l-4 border-[var(--color-primary-action)]'
                     : 'hover:bg-[var(--color-secondary-bg)]/60'
                 }`}
               >
-                {/* Avatar / Initial */}
-                <div className="w-10 h-10 rounded-2xl bg-[var(--color-primary-action)]/15 border border-[var(--color-primary-action)]/20 text-[var(--color-primary-action)] font-black text-sm flex items-center justify-center shrink-0">
-                  {otherParticipantName ? otherParticipantName[0].toUpperCase() : 'U'}
-                </div>
-
-                {/* Details */}
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <span
-                      className={`text-xs truncate ${
-                        unread > 0
-                          ? 'text-[var(--color-main-text)] font-extrabold'
-                          : 'text-[var(--color-main-text)] font-bold'
-                      }`}
-                    >
-                      {otherParticipantName}
-                    </span>
-                    {timeStr && (
-                      <span className="text-[10px] text-[var(--color-secondary-text)] shrink-0 font-medium">
-                        {timeStr}
-                      </span>
-                    )}
+                <button
+                  type="button"
+                  onClick={() => onSelectConversation(c)}
+                  aria-selected={isActive}
+                  className="w-full text-left p-3.5 flex items-start gap-3 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary-action)]"
+                >
+                  {/* Avatar / Initial */}
+                  <div className="w-10 h-10 rounded-2xl bg-[var(--color-primary-action)]/15 border border-[var(--color-primary-action)]/20 text-[var(--color-primary-action)] font-black text-sm flex items-center justify-center shrink-0">
+                    {otherParticipantName ? otherParticipantName[0].toUpperCase() : 'U'}
                   </div>
 
-                  <div className="text-[11px] text-[var(--color-primary-action)] font-semibold truncate">
-                    {event.title || 'Event Chat'}
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2">
-                    <p
-                      className={`text-xs truncate ${
-                        unread > 0
-                          ? 'text-[var(--color-main-text)] font-semibold'
-                          : 'text-[var(--color-secondary-text)]'
-                      }`}
-                    >
-                      {hasLastMsgText ? (
-                        <>
-                          <span className="opacity-75">
-                            {lastMsg.senderName ? `${lastMsg.senderName.split(' ')[0]}: ` : ''}
-                          </span>
-                          <span>{lastMsg.text}</span>
-                        </>
-                      ) : (
-                        <span className="italic opacity-60">No messages yet</span>
-                      )}
-                    </p>
-
-                    {/* Unread badge */}
-                    {unread > 0 && (
+                  {/* Details */}
+                  <div className="flex-1 min-w-0 space-y-1 pr-6 sm:pr-7">
+                    <div className="flex items-center justify-between gap-1">
                       <span
-                        aria-label={`${unread} unread message${unread > 1 ? 's' : ''}`}
-                        className="min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--color-primary-action)] text-white text-[10px] font-black flex items-center justify-center shrink-0 shadow-xs animate-scale-in"
+                        className={`text-xs truncate ${
+                          unread > 0
+                            ? 'text-[var(--color-main-text)] font-extrabold'
+                            : 'text-[var(--color-main-text)] font-bold'
+                        }`}
                       >
-                        {unread > 99 ? '99+' : unread}
+                        {otherParticipantName}
                       </span>
-                    )}
+                      {timeStr && (
+                        <span className="text-[10px] text-[var(--color-secondary-text)] shrink-0 font-medium">
+                          {timeStr}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] text-[var(--color-primary-action)] font-semibold truncate">
+                      {event.title || 'Event Chat'}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <p
+                        className={`text-xs truncate ${
+                          unread > 0
+                            ? 'text-[var(--color-main-text)] font-semibold'
+                            : 'text-[var(--color-secondary-text)]'
+                        }`}
+                      >
+                        {hasLastMsgText ? (
+                          <>
+                            <span className="opacity-75">
+                              {lastMsg.senderName ? `${lastMsg.senderName.split(' ')[0]}: ` : ''}
+                            </span>
+                            <span>{lastMsg.text}</span>
+                          </>
+                        ) : (
+                          <span className="italic opacity-60">No messages yet</span>
+                        )}
+                      </p>
+
+                      {/* Unread badge */}
+                      {unread > 0 && (
+                        <span
+                          aria-label={`${unread} unread message${unread > 1 ? 's' : ''}`}
+                          className="min-w-[20px] h-5 px-1.5 rounded-full bg-[var(--color-primary-action)] text-white text-[10px] font-black flex items-center justify-center shrink-0 shadow-xs animate-scale-in"
+                        >
+                          {unread > 99 ? '99+' : unread}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </button>
+                </button>
+
+                {/* Quick Delete Action Button on hover/focus */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteError(null);
+                    setConvToDelete(c);
+                  }}
+                  aria-label={`Delete chat with ${otherParticipantName}`}
+                  title="Delete chat from inbox"
+                  className="absolute right-2.5 bottom-2.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1.5 rounded-lg text-[var(--color-secondary-text)] hover:text-rose-500 hover:bg-rose-500/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-rose-500 transition-all cursor-pointer z-10"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
             );
           })
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConversationModal
+        isOpen={Boolean(convToDelete)}
+        onClose={() => {
+          if (!isDeleting) {
+            setConvToDelete(null);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={handleConfirmDelete}
+        participantName={
+          convToDelete
+            ? convToDelete.type === 'admin_organizer'
+              ? isAdmin
+                ? getParticipantName(convToDelete.organizerId, 'Event Organizer')
+                : 'Platform Admin'
+              : isOrganizer
+              ? getParticipantName(convToDelete.attendeeId, 'Attendee')
+              : getParticipantName(convToDelete.organizerId, 'Event Organizer')
+            : 'the other participant'
+        }
+        eventTitle={convToDelete?.eventId?.title || ''}
+        loading={isDeleting}
+        error={deleteError}
+      />
     </div>
   );
 }

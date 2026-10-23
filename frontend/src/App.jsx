@@ -20,6 +20,7 @@ import { ChatProvider } from './context/ChatContext.jsx';
 import NotificationToastContainer from './components/NotificationToastContainer';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import ChatDrawer from './components/chat/ChatDrawer';
+import ForwardMessageModal from './components/chat/ForwardMessageModal';
 import { Loader2 } from 'lucide-react';
 
 // Public Layout includes the full marketing and discovery footer
@@ -108,6 +109,8 @@ export default function App() {
               <SessionTimeoutModal />
               {/* Global Event Real-Time Chat Drawer */}
               <ChatDrawer />
+              {/* Global Forward Message Selection Modal */}
+              <ForwardMessageModal />
               <Routes>
               {/* Root Route: Smart landing / attendee dashboard redirection */}
               <Route path="/" element={<RootRoute />} />

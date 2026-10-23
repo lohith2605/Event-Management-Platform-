@@ -5,6 +5,8 @@ import ConversationList from '../chat/ConversationList';
 import ConversationHeader from '../chat/ConversationHeader';
 import MessageTimeline from '../chat/MessageTimeline';
 import MessageComposer from '../chat/MessageComposer';
+import MessageSearchPanel from '../chat/MessageSearchPanel';
+import SharedContentPanel from '../chat/SharedContentPanel';
 
 export default function OrganizerChatTab({ events = [], onNavigateBack, onToggleMenu }) {
   const {
@@ -26,9 +28,13 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
     isConnected,
     refreshConversations,
     otherParticipantId,
+    isSharedOpen,
+    setIsSharedOpen,
+    sharedInitialTab,
   } = useChat();
 
   const [selectedEventId, setSelectedEventId] = useState('all');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Filter conversations by selected event if chosen
   const displayedConversations = selectedEventId === 'all'
@@ -134,8 +140,26 @@ export default function OrganizerChatTab({ events = [], onNavigateBack, onToggle
               <ConversationHeader
                 conversation={activeConversation}
                 showBackButton={true}
-                onBack={leaveConversation}
+                onBack={() => {
+                  setIsSearchOpen(false);
+                  leaveConversation();
+                }}
+                onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+                isSearchOpen={isSearchOpen}
                 isConnected={isConnected}
+              />
+
+              <MessageSearchPanel
+                conversationId={activeConversation?._id}
+                isOpen={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+              />
+
+              <SharedContentPanel
+                conversationId={activeConversation?._id}
+                isOpen={isSharedOpen}
+                onClose={() => setIsSharedOpen(false)}
+                initialTab={sharedInitialTab}
               />
 
               <MessageTimeline

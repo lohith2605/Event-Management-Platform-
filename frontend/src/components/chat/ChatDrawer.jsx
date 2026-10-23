@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { MessageSquare, X, Maximize2 } from 'lucide-react';
@@ -7,8 +7,11 @@ import ConversationHeader from './ConversationHeader';
 import MessageTimeline from './MessageTimeline';
 import MessageComposer from './MessageComposer';
 import ConversationList from './ConversationList';
+import MessageSearchPanel from './MessageSearchPanel';
+import SharedContentPanel from './SharedContentPanel';
 
 export default function ChatDrawer() {
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const {
     isChatDrawerOpen,
     setIsChatDrawerOpen,
@@ -29,6 +32,9 @@ export default function ChatDrawer() {
     chatError,
     isConnected,
     otherParticipantId,
+    isSharedOpen,
+    setIsSharedOpen,
+    sharedInitialTab,
   } = useChat();
 
   const navigate = useNavigate();
@@ -86,10 +92,31 @@ export default function ChatDrawer() {
             <ConversationHeader
               conversation={activeConversation}
               showBackButton={true}
-              onBack={leaveConversation}
-              onClose={() => setIsChatDrawerOpen(false)}
+              onBack={() => {
+                setIsSearchOpen(false);
+                leaveConversation();
+              }}
+              onClose={() => {
+                setIsSearchOpen(false);
+                setIsChatDrawerOpen(false);
+              }}
               onExpand={handleExpandChat}
+              onToggleSearch={() => setIsSearchOpen((prev) => !prev)}
+              isSearchOpen={isSearchOpen}
               isConnected={isConnected}
+            />
+
+            <MessageSearchPanel
+              conversationId={activeConversation?._id}
+              isOpen={isSearchOpen}
+              onClose={() => setIsSearchOpen(false)}
+            />
+
+            <SharedContentPanel
+              conversationId={activeConversation?._id}
+              isOpen={isSharedOpen}
+              onClose={() => setIsSharedOpen(false)}
+              initialTab={sharedInitialTab}
             />
 
             <MessageTimeline

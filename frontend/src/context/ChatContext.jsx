@@ -16,6 +16,12 @@ import {
   uploadChatAttachmentApi,
   uploadChatImageApi,
   downloadAttachmentApi,
+  searchMessagesApi,
+  forwardMessageApi,
+  pinMessageApi,
+  unpinMessageApi,
+  fetchSharedContentApi,
+  deleteConversationApi,
 } from '../api/chat';
 
 const ChatContext = createContext(null);
@@ -32,6 +38,22 @@ export function ChatProvider({ children }) {
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [typingUsers, setTypingUsers] = useState(new Map()); // userId -> { userName }
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [forwardingMessage, setForwardingMessage] = useState(null);
+  const [isSharedOpen, setIsSharedOpen] = useState(false);
+  const [sharedInitialTab, setSharedInitialTab] = useState('media');
+  const highlightTimeoutRef = useRef(null);
+
+  const toggleSharedContent = useCallback((tab = 'media') => {
+    setIsSharedOpen((prev) => {
+      if (!prev) {
+        if (tab) setSharedInitialTab(tab);
+        return true;
+      }
+      return false;
+    });
+  }, []);
 
   // Loading & Error states
   const [loadingConversations, setLoadingConversations] = useState(false);
@@ -139,6 +161,8 @@ export function ChatProvider({ children }) {
       setUnreadChatCount(0);
       setIsChatDrawerOpen(false);
       setTypingUsers(new Map());
+      setReplyingTo(null);
+      setForwardingMessage(null);
     }
   }, [isAuthenticated, refreshConversations]);
 
@@ -178,6 +202,8 @@ export function ChatProvider({ children }) {
     async (conversationOrId, { autoOpenDrawer = true } = {}) => {
       setChatError(null);
       setTypingUsers(new Map());
+      setReplyingTo(null);
+      setForwardingMessage(null);
 
       // If passing null/undefined/falsy, deselect active conversation (leave room and clear thread)
       if (!conversationOrId) {
@@ -246,6 +272,7 @@ export function ChatProvider({ children }) {
       }
 
       setActiveConversation(conv);
+      setIsSharedOpen(false);
       if (autoOpenDrawer) {
         setIsChatDrawerOpen(true);
       }
@@ -334,6 +361,9 @@ export function ChatProvider({ children }) {
     }
     setActiveConversation(null);
     setIsChatDrawerOpen(false);
+    setIsSharedOpen(false);
+    setReplyingTo(null);
+    setForwardingMessage(null);
     if (typeof window !== 'undefined') {
       window.__utsavActiveConversationId = null;
       window.__utsavIsChatDrawerOpen = false;
@@ -351,6 +381,9 @@ export function ChatProvider({ children }) {
       });
     }
     setActiveConversation(null);
+    setIsSharedOpen(false);
+    setReplyingTo(null);
+    setForwardingMessage(null);
     if (typeof window !== 'undefined') {
       window.__utsavActiveConversationId = null;
     }
@@ -393,6 +426,86 @@ export function ChatProvider({ children }) {
       setLoadingMoreMessages(false);
     }
   }, [activeConversation, loadingMoreMessages, hasMoreMessages, messages]);
+
+  // 6b. Search messages within the active conversation
+  const searchMessages = useCallback(
+    async (conversationId, { query, page = 1, limit = 20 } = {}, signal) => {
+      const convId = extractId(conversationId || activeConversation?._id);
+      if (!convId) throw new Error('No active conversation specified for message search.');
+      return searchMessagesApi(convId, { query, page, limit }, signal);
+    },
+    [activeConversation]
+  );
+
+  // 6c. Jump directly to a target message in the timeline (auto-loading older messages if necessary)
+  const jumpToMessage = useCallback(
+    async (targetMessageId, messageCreatedAt) => {
+      const cleanMsgId = extractId(targetMessageId);
+      if (!cleanMsgId) return { success: false, error: 'Invalid message ID.' };
+
+      const currentConv = activeConversation || activeConversationRef.current;
+      if (!currentConv) return { success: false, error: 'No active conversation.' };
+      const convId = extractId(currentConv._id || currentConv.id);
+
+      // Helper to trigger scroll and highlight
+      const triggerHighlightAndScroll = (id) => {
+        setHighlightedMessageId(id);
+        if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+        highlightTimeoutRef.current = setTimeout(() => {
+          setHighlightedMessageId(null);
+        }, 3000);
+
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            const el = document.getElementById(`chat-message-${id}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 80);
+        });
+      };
+
+      // Case 1: Target message is already present in loaded messages
+      const alreadyLoaded = messages.some((m) => extractId(m._id || m.id) === cleanMsgId);
+      if (alreadyLoaded) {
+        triggerHighlightAndScroll(cleanMsgId);
+        return { success: true, alreadyLoaded: true };
+      }
+
+      // Case 2: Target message is older and not yet loaded into state
+      try {
+        setLoadingMoreMessages(true);
+        const oldestLoadedMessage = messages[0];
+        const before = oldestLoadedMessage?.createdAt || messageCreatedAt;
+
+        const res = await fetchMessagesApi(convId, {
+          limit: 50,
+          before,
+          includeMessageId: cleanMsgId,
+        });
+
+        if (res && Array.isArray(res.messages) && res.messages.length > 0) {
+          setMessages((prev) => {
+            const existingIds = new Set(prev.map((m) => extractId(m._id || m.id)));
+            const newOlder = res.messages.filter((m) => !existingIds.has(extractId(m._id || m.id)));
+            return [...newOlder, ...prev];
+          });
+          setHasMoreMessages(res.messages.length >= 50);
+
+          triggerHighlightAndScroll(cleanMsgId);
+          return { success: true, loaded: true };
+        } else {
+          return { success: false, notFound: true, error: 'Message could not be found in history.' };
+        }
+      } catch (err) {
+        console.warn('Failed to load target message:', err);
+        return { success: false, error: err.message || 'Failed to jump to message.' };
+      } finally {
+        setLoadingMoreMessages(false);
+      }
+    },
+    [activeConversation, messages]
+  );
 
   // 7. Send message (supports text and/or image attachment)
   const sendMessage = useCallback(
@@ -440,11 +553,14 @@ export function ChatProvider({ children }) {
           }
         }
 
+        const replyToMessageId = payload?.replyToMessageId || replyingTo?._id || null;
+
         const messagePayload = {
           conversationId: currentConv._id,
           text: trimmed,
           attachment,
           attachments: attachment ? [attachment] : [],
+          ...(replyToMessageId ? { replyToMessageId } : {}),
         };
 
         let sentMessage = null;
@@ -523,6 +639,9 @@ export function ChatProvider({ children }) {
             )
           );
 
+          // Clear reply state on successful send
+          setReplyingTo(null);
+
           return { success: true, message: sentMessage };
         }
 
@@ -535,7 +654,280 @@ export function ChatProvider({ children }) {
         setSendingMessage(false);
       }
     },
-    [activeConversation, socket]
+    [activeConversation, socket, replyingTo]
+  );
+
+  // 8. Forward message to a destination conversation
+  const forwardMessage = useCallback(
+    async (targetConversationId, sourceMessageId) => {
+      if (!targetConversationId || !sourceMessageId) {
+        return { success: false, error: 'Destination conversation and source message are required.' };
+      }
+
+      setSendingMessage(true);
+      setChatError(null);
+
+      try {
+        let forwardedMessage = null;
+
+        // Try Socket.IO forward_message first
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket forward timed out. Falling back to HTTP.'));
+            }, 4000);
+
+            socket.emit(
+              'forward_message',
+              { sourceMessageId, targetConversationId },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack.message);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to forward message via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            forwardedMessage = await socketPromise;
+          } catch (socketErr) {
+            console.warn('Socket forward delivery failed, falling back to REST:', socketErr.message);
+            const restRes = await forwardMessageApi(targetConversationId, sourceMessageId);
+            forwardedMessage = restRes?.message;
+          }
+        } else {
+          // Socket disconnected, send via REST
+          const restRes = await forwardMessageApi(targetConversationId, sourceMessageId);
+          forwardedMessage = restRes?.message;
+        }
+
+        if (forwardedMessage) {
+          const currentActive = activeConversationRef.current;
+          const currentActiveId = extractId(currentActive?._id);
+          const destId = extractId(targetConversationId);
+
+          // If the target conversation is currently active on screen, append to timeline
+          if (currentActiveId && currentActiveId === destId) {
+            setMessages((prev) => {
+              const exists = prev.some((m) => extractId(m._id || m.id) === extractId(forwardedMessage._id || forwardedMessage.id));
+              if (exists) return prev;
+              return [...prev, forwardedMessage];
+            });
+          }
+
+          // Update destination conversation in conversations list
+          let previewText = forwardedMessage.text;
+          if (!previewText) {
+            const att = forwardedMessage.attachment || (forwardedMessage.attachments && forwardedMessage.attachments[0]);
+            if (att) {
+              if (att.resourceType === 'raw' || (att.mimeType && !att.mimeType.startsWith('image/'))) {
+                previewText = `📄 ${att.originalName || 'Document'}`;
+              } else {
+                previewText = '📷 Image';
+              }
+            }
+          }
+
+          setConversations((prev) =>
+            prev.map((c) =>
+              extractId(c._id) === destId
+                ? {
+                    ...c,
+                    lastMessage: {
+                      text: previewText,
+                      senderId: forwardedMessage.senderId,
+                      senderName: forwardedMessage.senderName,
+                      senderRole: forwardedMessage.senderRole,
+                      createdAt: forwardedMessage.createdAt,
+                    },
+                    updatedAt: forwardedMessage.createdAt,
+                  }
+                : c
+            )
+          );
+
+          setForwardingMessage(null);
+          return { success: true, message: forwardedMessage };
+        }
+
+        throw new Error('No forwarded message response received.');
+      } catch (err) {
+        const errorMsg = err.message || 'Failed to forward message.';
+        setChatError(errorMsg);
+        return { success: false, error: errorMsg };
+      } finally {
+        setSendingMessage(false);
+      }
+    },
+    [socket]
+  );
+
+  // 9. Pin message in a conversation (replaces any previous pin)
+  const pinMessage = useCallback(
+    async (arg1, arg2) => {
+      let cleanConvId;
+      let cleanMsgId;
+      if (arg2 !== undefined) {
+        cleanConvId = extractId(arg1) || extractId(activeConversation?._id);
+        cleanMsgId = extractId(arg2);
+      } else {
+        cleanConvId = extractId(activeConversation?._id);
+        cleanMsgId = extractId(arg1);
+      }
+
+      if (!cleanConvId || !cleanMsgId) {
+        return { success: false, error: 'Conversation ID and Message ID are required.' };
+      }
+
+      try {
+        let pinnedResult = null;
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket pin timed out. Falling back to HTTP.'));
+            }, 4000);
+
+            socket.emit(
+              'pin_message',
+              { conversationId: cleanConvId, messageId: cleanMsgId },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to pin message via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            pinnedResult = await socketPromise;
+          } catch (socketErr) {
+            console.warn('Socket pin delivery failed, falling back to REST:', socketErr.message);
+            pinnedResult = await pinMessageApi(cleanConvId, cleanMsgId);
+          }
+        } else {
+          pinnedResult = await pinMessageApi(cleanConvId, cleanMsgId);
+        }
+
+        if (pinnedResult && pinnedResult.pinnedMessage) {
+          const pinnedMsg = pinnedResult.pinnedMessage;
+          setActiveConversation((prev) =>
+            prev && extractId(prev._id) === cleanConvId
+              ? { ...prev, pinnedMessage: pinnedMsg }
+              : prev
+          );
+          setConversations((prev) =>
+            prev.map((c) =>
+              extractId(c._id) === cleanConvId ? { ...c, pinnedMessage: pinnedMsg } : c
+            )
+          );
+          setMessages((prev) =>
+            prev.map((m) => ({
+              ...m,
+              isPinned: extractId(m._id || m.id) === cleanMsgId,
+            }))
+          );
+          return { success: true, pinnedMessage: pinnedMsg };
+        }
+
+        throw new Error('Invalid response from pin service.');
+      } catch (err) {
+        const errorMsg = err.message || 'Failed to pin message.';
+        setChatError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    },
+    [socket, activeConversation]
+  );
+
+  // 10. Unpin currently pinned message in a conversation
+  const unpinMessage = useCallback(
+    async (arg1, arg2) => {
+      let cleanConvId;
+      let cleanMsgId;
+      if (arg2 !== undefined) {
+        cleanConvId = extractId(arg1) || extractId(activeConversation?._id);
+        cleanMsgId = extractId(arg2);
+      } else if (arg1 !== undefined) {
+        const idStr = extractId(arg1);
+        if (activeConversation && extractId(activeConversation._id) === idStr) {
+          cleanConvId = idStr;
+          cleanMsgId = undefined;
+        } else {
+          cleanConvId = extractId(activeConversation?._id) || idStr;
+          cleanMsgId = idStr;
+        }
+      } else {
+        cleanConvId = extractId(activeConversation?._id);
+        cleanMsgId = undefined;
+      }
+
+      if (!cleanConvId) {
+        return { success: false, error: 'Conversation ID is required.' };
+      }
+
+      try {
+        let unpinResult = null;
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket unpin timed out. Falling back to HTTP.'));
+            }, 4000);
+
+            socket.emit(
+              'unpin_message',
+              { conversationId: cleanConvId, messageId: cleanMsgId },
+              (ack) => {
+                clearTimeout(timeout);
+                if (ack && ack.success) {
+                  resolve(ack);
+                } else {
+                  reject(new Error(ack?.error || 'Failed to unpin message via socket.'));
+                }
+              }
+            );
+          });
+
+          try {
+            unpinResult = await socketPromise;
+          } catch (socketErr) {
+            console.warn('Socket unpin delivery failed, falling back to REST:', socketErr.message);
+            unpinResult = await unpinMessageApi(cleanConvId, cleanMsgId);
+          }
+        } else {
+          unpinResult = await unpinMessageApi(cleanConvId, cleanMsgId);
+        }
+
+        if (unpinResult && (unpinResult.success || unpinResult.unpinnedMessageId !== undefined)) {
+          setActiveConversation((prev) =>
+            prev && extractId(prev._id) === cleanConvId
+              ? { ...prev, pinnedMessage: null }
+              : prev
+          );
+          setConversations((prev) =>
+            prev.map((c) =>
+              extractId(c._id) === cleanConvId ? { ...c, pinnedMessage: null } : c
+            )
+          );
+          setMessages((prev) =>
+            prev.map((m) => (m.isPinned ? { ...m, isPinned: false } : m))
+          );
+          return { success: true };
+        }
+
+        throw new Error('Invalid response from unpin service.');
+      } catch (err) {
+        const errorMsg = err.message || 'Failed to unpin message.';
+        setChatError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    },
+    [socket, activeConversation]
   );
 
   // 8. Typing indicators
@@ -804,17 +1196,35 @@ export function ChatProvider({ children }) {
 
       // Optimistic soft delete
       setMessages((prev) =>
-        prev.map((m) =>
-          extractId(m._id || m.id) === targetMsgId
-            ? {
-                ...m,
+        prev.map((m) => {
+          if (extractId(m._id || m.id) === targetMsgId) {
+            return {
+              ...m,
+              isDeleted: true,
+              deletedAt: now,
+              text: 'This message was deleted',
+              reactions: [],
+            };
+          }
+          if (
+            m.replyToMessageId &&
+            extractId(m.replyToMessageId) === targetMsgId &&
+            m.replySnapshot
+          ) {
+            return {
+              ...m,
+              replySnapshot: {
+                ...m.replySnapshot,
                 isDeleted: true,
-                deletedAt: now,
                 text: 'This message was deleted',
-                reactions: [],
-              }
-            : m
-        )
+                hasAttachment: false,
+                attachmentType: null,
+                originalName: '',
+              },
+            };
+          }
+          return m;
+        })
       );
 
       // Optimistically update conversation lastMessage preview
@@ -891,7 +1301,68 @@ export function ChatProvider({ children }) {
     [activeConversation, messages, socket]
   );
 
-  // 12. Real-time socket event listeners
+  // 12. Delete conversation from requester's inbox
+  const deleteConversation = useCallback(
+    async (conversationId) => {
+      const targetId = extractId(conversationId);
+      if (!targetId) return { success: false, error: 'Invalid conversation ID.' };
+
+      try {
+        setChatError(null);
+        let res = null;
+
+        if (socket && socket.connected) {
+          const socketPromise = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Socket delete timed out. Falling back to HTTP.'));
+            }, 3000);
+
+            socket.emit('delete_conversation', { conversationId: targetId }, (ack) => {
+              clearTimeout(timeout);
+              if (ack && ack.success) {
+                resolve(ack);
+              } else {
+                reject(new Error(ack?.error || 'Failed to delete conversation via socket.'));
+              }
+            });
+          });
+
+          try {
+            res = await socketPromise;
+          } catch {
+            res = await deleteConversationApi(targetId);
+          }
+        } else {
+          res = await deleteConversationApi(targetId);
+        }
+
+        // 1. Remove from local conversations list
+        setConversations((prev) => prev.filter((c) => extractId(c._id) !== targetId));
+
+        // 2. If the deleted conversation is currently active on screen:
+        // Clear active conversation selection, leave socket room, clear thread & transient state
+        const currentActiveId = extractId(activeConversationRef.current?._id);
+        if (currentActiveId === targetId) {
+          leaveConversation();
+        }
+
+        // 3. Re-sync unread badge count
+        const unreadRes = await fetchUnreadChatCountApi().catch(() => null);
+        if (unreadRes && typeof unreadRes.unreadCount === 'number') {
+          setUnreadChatCount(unreadRes.unreadCount);
+        }
+
+        return { success: true, result: res };
+      } catch (err) {
+        const errorMsg = err.message || 'Failed to delete conversation.';
+        setChatError(errorMsg);
+        return { success: false, error: errorMsg };
+      }
+    },
+    [socket, leaveConversation]
+  );
+
+  // 13. Real-time socket event listeners
   useEffect(() => {
     if (!socket || !isAuthenticated) return;
 
@@ -1029,12 +1500,16 @@ export function ChatProvider({ children }) {
       }
     };
 
-    // Reconnection handling: Re-join active room and synchronize messages
+    // Reconnection handling: Re-join active room and synchronize messages and pin state
     const handleReconnect = () => {
       const currentActive = activeConversationRef.current;
       if (currentActive && currentActive._id) {
         socket.emit('join_conversation', { conversationId: currentActive._id });
-        // Refresh message history to recover messages sent during disconnect
+        fetchConversationByIdApi(currentActive._id).then((convRes) => {
+          if (convRes && convRes.conversation) {
+            setActiveConversation(convRes.conversation);
+          }
+        });
         fetchMessagesApi(currentActive._id, { limit: 50 }).then((res) => {
           if (res && Array.isArray(res.messages)) {
             setMessages(res.messages);
@@ -1117,6 +1592,23 @@ export function ChatProvider({ children }) {
                 }
               );
             }
+            if (
+              m.replyToMessageId &&
+              extractId(m.replyToMessageId) === targetMsgId &&
+              m.replySnapshot
+            ) {
+              return {
+                ...m,
+                replySnapshot: {
+                  ...m.replySnapshot,
+                  isDeleted: true,
+                  text: 'This message was deleted',
+                  hasAttachment: false,
+                  attachmentType: null,
+                  originalName: '',
+                },
+              };
+            }
             return m;
           })
         );
@@ -1138,12 +1630,76 @@ export function ChatProvider({ children }) {
       );
     };
 
+    // Real-time message pinned broadcast
+    const handleMessagePinned = (payload) => {
+      if (!payload || !payload.conversationId || !payload.pinnedMessage) return;
+      const { conversationId, pinnedMessage } = payload;
+      const targetConvId = extractId(conversationId);
+      const currentActive = activeConversationRef.current;
+
+      if (currentActive && extractId(currentActive._id || currentActive.id) === targetConvId) {
+        setActiveConversation((prev) => (prev ? { ...prev, pinnedMessage } : prev));
+        const pinnedMsgId = extractId(pinnedMessage.messageId);
+        setMessages((prev) =>
+          prev.map((m) => ({
+            ...m,
+            isPinned: extractId(m._id || m.id) === pinnedMsgId,
+          }))
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          extractId(c._id) === targetConvId ? { ...c, pinnedMessage } : c
+        )
+      );
+    };
+
+    // Real-time message unpinned broadcast
+    const handleMessageUnpinned = (payload) => {
+      if (!payload || !payload.conversationId) return;
+      const { conversationId } = payload;
+      const targetConvId = extractId(conversationId);
+      const currentActive = activeConversationRef.current;
+
+      if (currentActive && extractId(currentActive._id || currentActive.id) === targetConvId) {
+        setActiveConversation((prev) => (prev ? { ...prev, pinnedMessage: null } : prev));
+        setMessages((prev) =>
+          prev.map((m) => (m.isPinned ? { ...m, isPinned: false } : m))
+        );
+      }
+
+      setConversations((prev) =>
+        prev.map((c) =>
+          extractId(c._id) === targetConvId ? { ...c, pinnedMessage: null } : c
+        )
+      );
+    };
+
+    // Real-time conversation deleted from inbox broadcast
+    const handleConversationDeleted = (payload) => {
+      if (!payload || !payload.conversationId) return;
+      const targetId = extractId(payload.conversationId);
+      setConversations((prev) => prev.filter((c) => extractId(c._id) !== targetId));
+      if (extractId(activeConversationRef.current?._id) === targetId) {
+        leaveConversation();
+      }
+      fetchUnreadChatCountApi()
+        .then((r) => {
+          if (r && typeof r.unreadCount === 'number') setUnreadChatCount(r.unreadCount);
+        })
+        .catch(() => {});
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('typing_status', handleTypingStatus);
     socket.on('messages_read', handleMessagesRead);
     socket.on('message_reaction_updated', handleReactionUpdated);
     socket.on('message_edited', handleMessageEdited);
     socket.on('message_deleted', handleMessageDeleted);
+    socket.on('message_pinned', handleMessagePinned);
+    socket.on('message_unpinned', handleMessageUnpinned);
+    socket.on('conversation_deleted', handleConversationDeleted);
     socket.on('chat_error', handleChatError);
     socket.on('reconnect', handleReconnect);
 
@@ -1154,10 +1710,13 @@ export function ChatProvider({ children }) {
       socket.off('message_reaction_updated', handleReactionUpdated);
       socket.off('message_edited', handleMessageEdited);
       socket.off('message_deleted', handleMessageDeleted);
+      socket.off('message_pinned', handleMessagePinned);
+      socket.off('message_unpinned', handleMessageUnpinned);
+      socket.off('conversation_deleted', handleConversationDeleted);
       socket.off('chat_error', handleChatError);
       socket.off('reconnect', handleReconnect);
     };
-  }, [socket, isAuthenticated, user, refreshConversations, markAsRead]);
+  }, [socket, isAuthenticated, user, refreshConversations, markAsRead, leaveConversation]);
 
   const value = {
     conversations,
@@ -1188,6 +1747,24 @@ export function ChatProvider({ children }) {
     uploadChatImage: uploadChatImageApi,
     uploadChatAttachment: uploadChatAttachmentApi,
     downloadAttachment: downloadAttachmentApi,
+    searchMessages,
+    jumpToMessage,
+    highlightedMessageId,
+    setHighlightedMessageId,
+    replyingTo,
+    setReplyingTo,
+    forwardingMessage,
+    setForwardingMessage,
+    forwardMessage,
+    pinMessage,
+    unpinMessage,
+    isSharedOpen,
+    setIsSharedOpen,
+    sharedInitialTab,
+    setSharedInitialTab,
+    toggleSharedContent,
+    fetchSharedContent: fetchSharedContentApi,
+    deleteConversation,
     isConnected,
     otherParticipantId,
   };
