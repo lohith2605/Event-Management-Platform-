@@ -465,11 +465,23 @@ export const markConversationRead = async (req, res, next) => {
     );
 
     // Broadcast read receipt via Socket.IO
-    emitToConversation(conversation._id, 'messages_read', {
-      conversationId: conversation._id,
-      userId: req.user._id,
+    const readPayload = {
+      conversationId: conversation._id.toString(),
+      userId: req.user._id.toString(),
       readAt: new Date(),
-    });
+    };
+    emitToConversation(conversation._id, 'messages_read', readPayload);
+
+    // Also notify direct participants' private user rooms to guarantee delivery
+    const orgIdStr = conversation.organizerId ? (conversation.organizerId._id || conversation.organizerId).toString() : '';
+    const attIdStr = conversation.attendeeId ? (conversation.attendeeId._id || conversation.attendeeId).toString() : '';
+    const currentUserIdStr = req.user._id.toString();
+    if (orgIdStr && orgIdStr !== currentUserIdStr) {
+      emitToUser(orgIdStr, 'messages_read', readPayload);
+    }
+    if (attIdStr && attIdStr !== currentUserIdStr) {
+      emitToUser(attIdStr, 'messages_read', readPayload);
+    }
 
     res.status(200).json({
       success: true,

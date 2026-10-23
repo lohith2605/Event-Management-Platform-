@@ -411,11 +411,22 @@ export const initSocket = (httpServer) => {
           }
         );
 
-        emitToConversation(conversation._id, 'messages_read', {
-          conversationId: conversation._id,
+        const readPayload = {
+          conversationId: conversation._id.toString(),
           userId: socket.userId,
           readAt: new Date(),
-        });
+        };
+        emitToConversation(conversation._id, 'messages_read', readPayload);
+
+        // Also notify direct participants' private user rooms to guarantee delivery
+        const orgIdStr = conversation.organizerId ? (conversation.organizerId._id || conversation.organizerId).toString() : '';
+        const attIdStr = conversation.attendeeId ? (conversation.attendeeId._id || conversation.attendeeId).toString() : '';
+        if (orgIdStr && orgIdStr !== socket.userId) {
+          emitToUser(orgIdStr, 'messages_read', readPayload);
+        }
+        if (attIdStr && attIdStr !== socket.userId) {
+          emitToUser(attIdStr, 'messages_read', readPayload);
+        }
 
         if (typeof callback === 'function') callback({ success: true });
       } catch (err) {

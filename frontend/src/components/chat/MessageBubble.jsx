@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useChat } from '../../context/ChatContext';
-import { extractId } from '../../utils/chatUtils';
+import { extractId, getOtherParticipantId } from '../../utils/chatUtils';
 
 const formatFileSize = (bytes) => {
   if (!bytes || bytes === 0) return '0 B';
@@ -190,14 +190,15 @@ export default function MessageBubble({ message, isOwn, otherParticipantId }) {
   // Determine read receipt status
   const isReadByRecipient = () => {
     if (!isOwn || !message.readBy || message.isDeleted) return false;
-    if (otherParticipantId) {
+    const recipientId = otherParticipantId || getOtherParticipantId(activeConversation, user);
+    if (recipientId) {
       return message.readBy.some(
-        (r) => extractId(r.userId) === extractId(otherParticipantId)
+        (r) => extractId(r.userId || r.user) === extractId(recipientId)
       );
     }
     const senderIdStr = extractId(message.senderId);
     return message.readBy.some((r) => {
-      const readerIdStr = extractId(r.userId);
+      const readerIdStr = extractId(r.userId || r.user);
       return readerIdStr && readerIdStr !== senderIdStr;
     });
   };

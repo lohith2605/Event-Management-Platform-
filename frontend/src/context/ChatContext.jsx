@@ -145,20 +145,21 @@ export function ChatProvider({ children }) {
   // 2. Mark active conversation as read
   const markAsRead = useCallback(
     async (convId) => {
-      if (!convId) return;
+      const idToMark = extractId(convId);
+      if (!idToMark) return;
       try {
         // Optimistic local state update
         setConversations((prev) =>
-          prev.map((c) => (c._id === convId ? { ...c, unreadCount: 0 } : c))
+          prev.map((c) => (extractId(c._id) === idToMark ? { ...c, unreadCount: 0 } : c))
         );
 
         // Emit socket mark_read event if connected
         if (socket && socket.connected) {
-          socket.emit('mark_read', { conversationId: convId });
+          socket.emit('mark_read', { conversationId: idToMark });
         }
 
         // Call REST endpoint
-        await markConversationReadApi(convId);
+        await markConversationReadApi(idToMark);
 
         // Refresh global unread count
         const unreadRes = await fetchUnreadChatCountApi().catch(() => null);
@@ -196,7 +197,7 @@ export function ChatProvider({ children }) {
 
       if (typeof conversationOrId === 'string') {
         convId = conversationOrId;
-        conv = conversations.find((c) => c._id === convId);
+        conv = conversations.find((c) => extractId(c._id) === convId);
         if (!conv) {
           try {
             setLoadingMessages(true);
@@ -210,9 +211,9 @@ export function ChatProvider({ children }) {
             return;
           }
         }
-      } else if (conversationOrId && conversationOrId._id) {
+      } else if (conversationOrId && (conversationOrId._id || conversationOrId.id)) {
         conv = conversationOrId;
-        convId = conv._id;
+        convId = extractId(conv._id || conv.id);
       }
 
       if (!conv || !convId) return;
@@ -235,12 +236,12 @@ export function ChatProvider({ children }) {
       // Leave previous room if changing conversation
       if (
         activeConversationRef.current &&
-        activeConversationRef.current._id !== convId &&
+        extractId(activeConversationRef.current._id) !== convId &&
         socket &&
         socket.connected
       ) {
         socket.emit('leave_conversation', {
-          conversationId: activeConversationRef.current._id,
+          conversationId: extractId(activeConversationRef.current._id),
         });
       }
 
@@ -303,10 +304,11 @@ export function ChatProvider({ children }) {
         if (res && res.conversation) {
           await openConversation(res.conversation, { autoOpenDrawer });
           // Ensure it is in the conversations list
+          const newConvId = extractId(res.conversation._id);
           setConversations((prev) => {
-            const exists = prev.some((c) => c._id === res.conversation._id);
+            const exists = prev.some((c) => extractId(c._id) === newConvId);
             if (exists) {
-              return prev.map((c) => (c._id === res.conversation._id ? res.conversation : c));
+              return prev.map((c) => (extractId(c._id) === newConvId ? res.conversation : c));
             }
             return [res.conversation, ...prev];
           });
@@ -502,9 +504,10 @@ export function ChatProvider({ children }) {
           }
 
           // Update lastMessage on conversation
+          const activeConvId = extractId(currentConv._id);
           setConversations((prev) =>
             prev.map((c) =>
-              c._id === currentConv._id
+              extractId(c._id) === activeConvId
                 ? {
                     ...c,
                     lastMessage: {
@@ -911,12 +914,15 @@ export function ChatProvider({ children }) {
         }
       }
 
+      const targetConvId = extractId(conversationId);
+      const currentActiveId = extractId(currentActive?._id);
+
       setConversations((prev) => {
-        const exists = prev.some((c) => c._id === conversationId);
+        const exists = prev.some((c) => extractId(c._id) === targetConvId);
         if (exists) {
           return prev.map((c) => {
-            if (c._id === conversationId) {
-              const isCurrentlyOpen = currentActive && currentActive._id === conversationId;
+            if (extractId(c._id) === targetConvId) {
+              const isCurrentlyOpen = Boolean(currentActiveId && currentActiveId === targetConvId);
               return {
                 ...c,
                 lastMessage: {
@@ -939,9 +945,9 @@ export function ChatProvider({ children }) {
       });
 
       // If this conversation is currently open
-      if (currentActive && currentActive._id === conversationId) {
+      if (currentActiveId && currentActiveId === targetConvId) {
         setMessages((prev) => {
-          const alreadyExists = prev.some((m) => m._id === message._id);
+          const alreadyExists = prev.some((m) => extractId(m._id || m.id) === extractId(message._id || message.id));
           if (alreadyExists) return prev;
           return [...prev, message];
         });
@@ -957,7 +963,7 @@ export function ChatProvider({ children }) {
         const currentUserId = extractId(user);
         const msgSenderId = extractId(message.senderId);
         if (currentUserId && msgSenderId && msgSenderId !== currentUserId) {
-          markAsRead(conversationId);
+          markAsRead(targetConvId);
         }
       } else {
         // Increment global unread count
@@ -991,20 +997,24 @@ export function ChatProvider({ children }) {
     // Read receipts broadcast
     const handleMessagesRead = (payload) => {
       if (!payload || !payload.conversationId) return;
+      const targetConvId = extractId(payload.conversationId);
       const currentActive = activeConversationRef.current;
-      if (!currentActive || extractId(currentActive._id || currentActive.id) !== extractId(payload.conversationId)) return;
+      const currentActiveId = extractId(currentActive?._id);
+      if (!currentActive || currentActiveId !== targetConvId) return;
 
       const { userId, readAt } = payload;
       const readUserId = extractId(userId);
+      if (!readUserId) return;
+
       setMessages((prev) =>
         prev.map((m) => {
           const alreadyRead = (m.readBy || []).some(
-            (r) => extractId(r.userId) === readUserId
+            (r) => extractId(r.userId || r.user) === readUserId
           );
           if (!alreadyRead) {
             return {
               ...m,
-              readBy: [...(m.readBy || []), { userId, readAt: readAt || new Date() }],
+              readBy: [...(m.readBy || []), { userId: readUserId, readAt: readAt || new Date() }],
             };
           }
           return m;

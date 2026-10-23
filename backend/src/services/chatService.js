@@ -16,9 +16,12 @@ import User from '../models/User.js';
 export const hasQualifyingBooking = async (userId, eventId) => {
   if (!userId || !eventId) return false;
 
+  const targetUserId = userId._id || userId;
+  const targetEventId = eventId._id || eventId;
+
   const qualifyingBooking = await Booking.findOne({
-    userId,
-    eventId,
+    userId: targetUserId,
+    eventId: targetEventId,
     status: 'confirmed',
     paymentStatus: { $nin: ['failed', 'refunded'] },
     refundStatus: { $ne: 'processed' },
@@ -45,7 +48,8 @@ export const verifyConversationAccess = async (user, conversation) => {
   }
 
   // 1. Fetch associated Event to check lifecycle and publication status
-  const event = await Event.findById(conversation.eventId);
+  const eventId = conversation.eventId?._id || conversation.eventId;
+  let event = conversation.eventId?.status ? conversation.eventId : await Event.findById(eventId);
   if (!event) {
     return { allowed: false, status: 404, message: 'Associated event not found.' };
   }
@@ -59,9 +63,13 @@ export const verifyConversationAccess = async (user, conversation) => {
     };
   }
 
-  const userIdStr = user._id.toString();
-  const organizerIdStr = conversation.organizerId ? conversation.organizerId.toString() : '';
-  const attendeeIdStr = conversation.attendeeId ? conversation.attendeeId.toString() : '';
+  const userIdStr = (user._id || user).toString();
+  const organizerIdStr = conversation.organizerId
+    ? (conversation.organizerId._id || conversation.organizerId).toString()
+    : '';
+  const attendeeIdStr = conversation.attendeeId
+    ? (conversation.attendeeId._id || conversation.attendeeId).toString()
+    : '';
 
   // 2. Type: admin_organizer
   if (conversation.type === 'admin_organizer') {
@@ -95,7 +103,7 @@ export const verifyConversationAccess = async (user, conversation) => {
 
     // Attendee check: must be the specific attendee and have a qualifying booking
     if (userIdStr === attendeeIdStr) {
-      const isQualified = await hasQualifyingBooking(user._id, conversation.eventId);
+      const isQualified = await hasQualifyingBooking(user._id, event._id || eventId);
       if (!isQualified) {
         return {
           allowed: false,
